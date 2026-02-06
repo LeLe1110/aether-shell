@@ -81,13 +81,32 @@ class FeishuChannel(BaseChannel):
             .log_level(lark.LogLevel.INFO) \
             .build()
         
-        # Create event handler (only register message receive, ignore other events)
-        event_handler = lark.EventDispatcherHandler.builder(
+        # Create event handler (register supported events to avoid "processor not found" logs)
+        handler_builder = lark.EventDispatcherHandler.builder(
             self.config.encrypt_key or "",
             self.config.verification_token or "",
-        ).register_p2_im_message_receive_v1(
-            self._on_message_sync
-        ).build()
+        )
+        handler_builder.register_p2_im_message_receive_v1(self._on_message_sync)
+        # Optional events can be emitted by Feishu even if not used by us.
+        try:
+            for method_name in (
+                "register_p2_im_message_read_v1",
+                "register_p2_im_message_message_read_v1",
+            ):
+                method = getattr(handler_builder, method_name, None)
+                if callable(method):
+                    method(self._on_message_read_sync)
+                    break
+            method = getattr(
+                handler_builder,
+                "register_p2_im_message_reaction_created_v1",
+                None,
+            )
+            if callable(method):
+                method(self._on_message_reaction_created_sync)
+        except Exception as e:
+            logger.debug(f"Feishu optional event registration skipped: {e}")
+        event_handler = handler_builder.build()
         
         # Create WebSocket client for long connection
         self._ws_client = lark.ws.Client(
@@ -195,6 +214,90 @@ class FeishuChannel(BaseChannel):
                 
         except Exception as e:
             logger.error(f"Error sending Feishu message: {e}")
+
+    @staticmethod
+    def _parse_post_content(raw_content: str) -> str:
+        """Parse Feishu/Lark 'post' message content into plain text."""
+        try:
+            data = json.loads(raw_content) if raw_content else {}
+        except json.JSONDecodeError:
+            return raw_content or ""
+
+        if not isinstance(data, dict):
+            return raw_content or ""
+
+        post_data = data.get("post")
+        body: dict[str, Any] = data
+
+        if isinstance(post_data, dict):
+            # Multi-locale format: {"post": {"zh_cn": {...}, "en_us": {...}}}
+            if "title" in post_data or "content" in post_data:
+                body = post_data
+            else:
+                preferred = post_data.get("zh_cn") or post_data.get("en_us")
+                if isinstance(preferred, dict):
+                    body = preferred
+                elif post_data:
+                    first = next(iter(post_data.values()))
+                    if isinstance(first, dict):
+                        body = first
+
+        lines: list[str] = []
+        title = body.get("title") if isinstance(body, dict) else ""
+        if isinstance(title, str) and title.strip():
+            lines.append(title.strip())
+
+        content_blocks = body.get("content") if isinstance(body, dict) else None
+        if isinstance(content_blocks, list):
+            for block in content_blocks:
+                if not isinstance(block, list):
+                    continue
+                line_parts: list[str] = []
+                for elem in block:
+                    if not isinstance(elem, dict):
+                        continue
+                    tag = elem.get("tag")
+                    if tag == "text":
+                        text = elem.get("text") or ""
+                        if text:
+                            line_parts.append(text)
+                    elif tag == "a":
+                        text = elem.get("text") or ""
+                        href = elem.get("href") or ""
+                        if text and href:
+                            line_parts.append(f"{text} ({href})")
+                        elif text:
+                            line_parts.append(text)
+                        elif href:
+                            line_parts.append(href)
+                    elif tag == "at":
+                        name = elem.get("user_name") or elem.get("user_id") or ""
+                        if name:
+                            line_parts.append(f"@{name}")
+                    elif tag == "emoji":
+                        emoji = elem.get("emoji_type") or elem.get("emoji_name") or ""
+                        if emoji:
+                            line_parts.append(emoji)
+                    elif tag == "img":
+                        line_parts.append("[image]")
+                    elif tag == "media":
+                        line_parts.append("[media]")
+                    elif tag == "hr":
+                        line_parts.append("---")
+                    else:
+                        text = elem.get("text")
+                        if text:
+                            line_parts.append(text)
+                line = "".join(line_parts).strip()
+                if line:
+                    lines.append(line)
+
+        if not lines:
+            text = data.get("text")
+            if isinstance(text, str) and text.strip():
+                lines.append(text.strip())
+
+        return "\n".join(lines).strip()
     
     def _on_message_sync(self, data: "P2ImMessageReceiveV1") -> None:
         """
@@ -203,6 +306,14 @@ class FeishuChannel(BaseChannel):
         """
         if self._loop and self._loop.is_running():
             asyncio.run_coroutine_threadsafe(self._on_message(data), self._loop)
+
+    def _on_message_read_sync(self, data: Any) -> None:
+        """Ignore message read events to avoid noisy logs."""
+        return
+
+    def _on_message_reaction_created_sync(self, data: Any) -> None:
+        """Ignore reaction created events to avoid noisy logs."""
+        return
     
     async def _on_message(self, data: "P2ImMessageReceiveV1") -> None:
         """Handle incoming message from Feishu."""
@@ -241,6 +352,10 @@ class FeishuChannel(BaseChannel):
                     content = json.loads(message.content).get("text", "")
                 except json.JSONDecodeError:
                     content = message.content or ""
+            elif msg_type == "post":
+                content = self._parse_post_content(message.content or "")
+                if not content:
+                    content = "[post]"
             else:
                 content = MSG_TYPE_MAP.get(msg_type, f"[{msg_type}]")
             
