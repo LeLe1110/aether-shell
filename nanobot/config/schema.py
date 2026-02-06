@@ -28,6 +28,7 @@ class FeishuConfig(BaseModel):
     encrypt_key: str = ""  # Encrypt Key for event subscription (optional)
     verification_token: str = ""  # Verification Token for event subscription (optional)
     allow_from: list[str] = Field(default_factory=list)  # Allowed user open_ids
+    auto_react: bool = False  # Add reaction emoji on incoming messages
 
 
 class ChannelsConfig(BaseModel):

@@ -231,8 +231,9 @@ class FeishuChannel(BaseChannel):
             chat_type = message.chat_type  # "p2p" or "group"
             msg_type = message.message_type
             
-            # Add reaction to indicate "seen"
-            await self._add_reaction(message_id, "THUMBSUP")
+            # Add reaction to indicate "seen" (optional)
+            if self.config.auto_react:
+                await self._add_reaction(message_id, "THUMBSUP")
             
             # Parse message content
             if msg_type == "text":
