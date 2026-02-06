@@ -64,7 +64,15 @@ def save_config(config: Config, config_path: Path | None = None) -> None:
 def convert_keys(data: Any) -> Any:
     """Convert camelCase keys to snake_case for Pydantic."""
     if isinstance(data, dict):
-        return {camel_to_snake(k): convert_keys(v) for k, v in data.items()}
+        converted: dict[str, Any] = {}
+        for k, v in data.items():
+            snake_key = camel_to_snake(k)
+            if snake_key == "headers" and isinstance(v, dict):
+                # Preserve header keys as-is (case and punctuation matter)
+                converted[snake_key] = v
+            else:
+                converted[snake_key] = convert_keys(v)
+        return converted
     if isinstance(data, list):
         return [convert_keys(item) for item in data]
     return data
@@ -73,7 +81,14 @@ def convert_keys(data: Any) -> Any:
 def convert_to_camel(data: Any) -> Any:
     """Convert snake_case keys to camelCase."""
     if isinstance(data, dict):
-        return {snake_to_camel(k): convert_to_camel(v) for k, v in data.items()}
+        converted: dict[str, Any] = {}
+        for k, v in data.items():
+            if k == "headers" and isinstance(v, dict):
+                # Preserve header keys as-is (case and punctuation matter)
+                converted[k] = v
+            else:
+                converted[snake_to_camel(k)] = convert_to_camel(v)
+        return converted
     if isinstance(data, list):
         return [convert_to_camel(item) for item in data]
     return data

@@ -181,6 +181,10 @@ def gateway(
     # Create provider (supports OpenRouter, Anthropic, OpenAI, Bedrock)
     api_key = config.get_api_key()
     api_base = config.get_api_base()
+    api_type = config.get_api_type()
+    api_headers = config.get_api_headers()
+    api_proxy = config.get_api_proxy()
+    drop_params = config.get_drop_params()
     model = config.agents.defaults.model
     is_bedrock = model.startswith("bedrock/")
 
@@ -192,6 +196,10 @@ def gateway(
     provider = LiteLLMProvider(
         api_key=api_key,
         api_base=api_base,
+        api_type=api_type,
+        extra_headers=api_headers,
+        proxy=api_proxy,
+        drop_params=drop_params,
         default_model=config.agents.defaults.model
     )
     
@@ -292,6 +300,10 @@ def agent(
     
     api_key = config.get_api_key()
     api_base = config.get_api_base()
+    api_type = config.get_api_type()
+    api_headers = config.get_api_headers()
+    api_proxy = config.get_api_proxy()
+    drop_params = config.get_drop_params()
     model = config.agents.defaults.model
     is_bedrock = model.startswith("bedrock/")
 
@@ -303,6 +315,10 @@ def agent(
     provider = LiteLLMProvider(
         api_key=api_key,
         api_base=api_base,
+        api_type=api_type,
+        extra_headers=api_headers,
+        proxy=api_proxy,
+        drop_params=drop_params,
         default_model=config.agents.defaults.model
     )
     

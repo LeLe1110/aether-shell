@@ -6,6 +6,7 @@ import os
 import re
 from typing import Any
 
+import httpx
 import litellm
 from litellm import acompletion, aresponses
 
@@ -26,12 +27,16 @@ class LiteLLMProvider(LLMProvider):
         api_base: str | None = None,
         api_type: str | None = None,
         extra_headers: dict[str, str] | None = None,
+        proxy: str | None = None,
+        drop_params: bool = False,
         default_model: str = "anthropic/claude-opus-4-5"
     ):
         super().__init__(api_key, api_base)
         self.default_model = default_model
         self.api_type = api_type.lower() if api_type else None
         self.extra_headers = extra_headers
+        self.proxy = proxy
+        self.drop_params = drop_params
         
         # Detect OpenRouter by api_key prefix or explicit api_base
         self.is_openrouter = (
@@ -68,6 +73,11 @@ class LiteLLMProvider(LLMProvider):
         
         if api_base:
             litellm.api_base = api_base
+
+        if proxy:
+            os.environ["HTTP_PROXY"] = proxy
+            os.environ["HTTPS_PROXY"] = proxy
+            os.environ.setdefault("ALL_PROXY", proxy)
         
         # Disable LiteLLM logging noise
         litellm.suppress_debug_info = True
@@ -165,6 +175,15 @@ class LiteLLMProvider(LLMProvider):
         max_tokens: int,
         temperature: float,
     ) -> LLMResponse:
+        if self.api_base:
+            return await self._chat_with_direct_responses(
+                messages=messages,
+                tools=tools,
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+
         input_items = self._messages_to_responses_input(messages)
 
         kwargs: dict[str, Any] = {
@@ -172,6 +191,8 @@ class LiteLLMProvider(LLMProvider):
             "input": input_items,
             "max_output_tokens": max_tokens,
             "temperature": temperature,
+            "custom_llm_provider": "openai",
+            "stream": True,
         }
 
         if self.api_base:
@@ -185,12 +206,179 @@ class LiteLLMProvider(LLMProvider):
 
         try:
             response = await aresponses(**kwargs)
+            if hasattr(response, "__aiter__"):
+                return await self._parse_responses_stream(response)
             return self._parse_responses_response(response)
         except Exception as e:
             return LLMResponse(
                 content=f"Error calling LLM: {str(e)}",
                 finish_reason="error",
             )
+
+    async def _chat_with_direct_responses(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        model: str,
+        max_tokens: int,
+        temperature: float,
+    ) -> LLMResponse:
+        input_items = self._messages_to_responses_input(messages)
+        base_body: dict[str, Any] = {
+            "model": model,
+            "input": input_items,
+        }
+        if not self.drop_params:
+            base_body["max_output_tokens"] = max_tokens
+            base_body["temperature"] = temperature
+        if tools:
+            base_body["tools"] = self._convert_tools_to_responses(tools)
+            base_body["tool_choice"] = "auto"
+
+        base_headers = {
+            "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
+            "Content-Type": "application/json",
+        }
+        if self.extra_headers:
+            base_headers.update(self.extra_headers)
+        base_headers = {k: v for k, v in base_headers.items() if v}
+
+        urls = self._build_responses_urls()
+        last_error: str | None = None
+
+        try:
+            client_kwargs: dict[str, Any] = {"timeout": 60.0}
+            if self.proxy:
+                client_kwargs["proxy"] = self.proxy
+            async with httpx.AsyncClient(**client_kwargs) as client:
+                for url in urls:
+                    # Try non-stream first (most compatible)
+                    headers = dict(base_headers)
+                    headers["Accept"] = "application/json"
+                    try:
+                        response = await client.post(url, headers=headers, json=base_body)
+                        if response.status_code == 200:
+                            return self._parse_responses_response(response.json())
+                        raw = response.text
+                        if response.status_code < 500:
+                            return LLMResponse(
+                                content=f"Error calling LLM: HTTP {response.status_code} {raw}",
+                                finish_reason="error",
+                            )
+                        last_error = f"HTTP {response.status_code} {raw}"
+                    except Exception as e:
+                        last_error = str(e)
+
+                    # Retry with stream (some gateways only support SSE)
+                    stream_body = dict(base_body)
+                    stream_body["stream"] = True
+                    headers = dict(base_headers)
+                    headers["Accept"] = "text/event-stream"
+                    try:
+                        async with client.stream("POST", url, headers=headers, json=stream_body) as response:
+                            if response.status_code == 200:
+                                return await self._consume_responses_sse(response)
+                            raw = await response.aread()
+                            raw_text = raw.decode("utf-8", "ignore")
+                            if response.status_code < 500:
+                                return LLMResponse(
+                                    content=f"Error calling LLM: HTTP {response.status_code} {raw_text}",
+                                    finish_reason="error",
+                                )
+                            last_error = f"HTTP {response.status_code} {raw_text}"
+                    except Exception as e:
+                        last_error = str(e)
+
+            return LLMResponse(
+                content=f"Error calling LLM: {last_error or 'unknown error'}",
+                finish_reason="error",
+            )
+        except Exception as e:
+            return LLMResponse(
+                content=f"Error calling LLM: {str(e)}",
+                finish_reason="error",
+            )
+
+    def _build_responses_urls(self) -> list[str]:
+        if not self.api_base:
+            return []
+        base = self.api_base.rstrip("/")
+        urls = [base if base.endswith("/responses") else base + "/responses"]
+        if base.endswith("/v1"):
+            urls.append(base[:-3] + "/responses")
+        return urls
+
+    async def _consume_responses_sse(self, response: httpx.Response) -> LLMResponse:
+        content_parts: list[str] = []
+        completed_response: dict[str, Any] | None = None
+
+        async for event in self._iter_sse(response):
+            event_type = event.get("type")
+            if event_type == "response.output_text.delta":
+                delta = event.get("delta") or ""
+                if delta:
+                    content_parts.append(delta)
+            elif event_type == "response.completed":
+                completed_response = event.get("response")
+
+        if completed_response:
+            return self._parse_responses_response(completed_response)
+
+        return LLMResponse(
+            content="".join(content_parts),
+            finish_reason="stop",
+        )
+
+    async def _iter_sse(self, response: httpx.Response):
+        buffer: list[str] = []
+        async for line in response.aiter_lines():
+            if line == "":
+                if buffer:
+                    data_lines = [l[5:].strip() for l in buffer if l.startswith("data:")]
+                    buffer = []
+                    if not data_lines:
+                        continue
+                    data = "\n".join(data_lines).strip()
+                    if not data or data == "[DONE]":
+                        continue
+                    try:
+                        yield json.loads(data)
+                    except Exception:
+                        continue
+                continue
+            buffer.append(line)
+
+    async def _parse_responses_stream(self, stream: Any) -> LLMResponse:
+        content_parts: list[str] = []
+        async for event in stream:
+            event_type = self._get_event_type(event)
+            if event_type == "response.output_text.delta":
+                delta = self._get_event_value(event, "delta")
+                if delta:
+                    content_parts.append(delta)
+
+        completed = getattr(stream, "completed_response", None)
+        if completed is not None:
+            response_obj = getattr(completed, "response", None)
+            if response_obj is not None:
+                return self._parse_responses_response(response_obj)
+
+        content = "".join(content_parts)
+        return LLMResponse(
+            content=content,
+            finish_reason="stop",
+        )
+
+    def _get_event_type(self, event: Any) -> str | None:
+        if isinstance(event, dict):
+            return event.get("type")
+        return getattr(event, "type", None)
+
+    def _get_event_value(self, event: Any, key: str) -> Any:
+        if isinstance(event, dict):
+            return event.get(key)
+        return getattr(event, key, None)
+
 
     def _parse_response(self, response: Any) -> LLMResponse:
         """Parse LiteLLM response into our standard format."""
@@ -235,9 +423,15 @@ class LiteLLMProvider(LLMProvider):
         content = ""
         if hasattr(response, "output_text"):
             content = response.output_text or ""
+        elif isinstance(response, dict):
+            content = response.get("output_text") or ""
 
         tool_calls: list[ToolCallRequest] = []
         output_items = getattr(response, "output", None)
+        if output_items is None and isinstance(response, dict):
+            output_items = response.get("output")
+        if not content and output_items:
+            content = self._extract_output_text(output_items)
         if output_items:
             for item in output_items:
                 item_type = item.get("type") if isinstance(item, dict) else getattr(item, "type", None)
@@ -284,6 +478,21 @@ class LiteLLMProvider(LLMProvider):
             finish_reason=finish_reason,
             usage=usage,
         )
+
+    def _extract_output_text(self, output_items: list[Any]) -> str:
+        parts: list[str] = []
+        for item in output_items:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") != "message":
+                continue
+            content = item.get("content") or []
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "output_text":
+                    text = block.get("text")
+                    if text:
+                        parts.append(text)
+        return "".join(parts)
 
     def _messages_to_responses_input(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []

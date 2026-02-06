@@ -55,6 +55,10 @@ class ProviderConfig(BaseModel):
     """LLM provider configuration."""
     api_key: str = ""
     api_base: str | None = None
+    api_type: str | None = None  # e.g. "openai-responses" for /v1/responses
+    headers: dict[str, str] | None = None  # Extra headers for provider requests
+    proxy: str | None = None  # Optional proxy URL, e.g. "http://127.0.0.1:7897"
+    drop_params: bool = False  # Drop optional params for strict gateways
 
 
 class ProvidersConfig(BaseModel):
@@ -129,11 +133,93 @@ class Config(BaseSettings):
         """Get API base URL if using OpenRouter, Zhipu or vLLM."""
         if self.providers.openrouter.api_key:
             return self.providers.openrouter.api_base or "https://openrouter.ai/api/v1"
+        if self.providers.openai.api_key and self.providers.openai.api_base:
+            return self.providers.openai.api_base
         if self.providers.zhipu.api_key:
             return self.providers.zhipu.api_base
         if self.providers.vllm.api_base:
             return self.providers.vllm.api_base
         return None
+
+    def get_api_type(self) -> str | None:
+        """Get API type for the active provider (e.g. openai-responses)."""
+        if self.providers.openrouter.api_key:
+            return self.providers.openrouter.api_type
+        if self.providers.deepseek.api_key:
+            return self.providers.deepseek.api_type
+        if self.providers.anthropic.api_key:
+            return self.providers.anthropic.api_type
+        if self.providers.openai.api_key:
+            return self.providers.openai.api_type
+        if self.providers.gemini.api_key:
+            return self.providers.gemini.api_type
+        if self.providers.zhipu.api_key:
+            return self.providers.zhipu.api_type
+        if self.providers.groq.api_key:
+            return self.providers.groq.api_type
+        if self.providers.vllm.api_key or self.providers.vllm.api_base:
+            return self.providers.vllm.api_type
+        return None
+
+    def get_api_headers(self) -> dict[str, str] | None:
+        """Get extra headers for the active provider."""
+        if self.providers.openrouter.api_key:
+            return self.providers.openrouter.headers
+        if self.providers.deepseek.api_key:
+            return self.providers.deepseek.headers
+        if self.providers.anthropic.api_key:
+            return self.providers.anthropic.headers
+        if self.providers.openai.api_key:
+            return self.providers.openai.headers
+        if self.providers.gemini.api_key:
+            return self.providers.gemini.headers
+        if self.providers.zhipu.api_key:
+            return self.providers.zhipu.headers
+        if self.providers.groq.api_key:
+            return self.providers.groq.headers
+        if self.providers.vllm.api_key or self.providers.vllm.api_base:
+            return self.providers.vllm.headers
+        return None
+
+    def get_api_proxy(self) -> str | None:
+        """Get proxy for the active provider."""
+        if self.providers.openrouter.api_key:
+            return self.providers.openrouter.proxy
+        if self.providers.deepseek.api_key:
+            return self.providers.deepseek.proxy
+        if self.providers.anthropic.api_key:
+            return self.providers.anthropic.proxy
+        if self.providers.openai.api_key:
+            return self.providers.openai.proxy
+        if self.providers.gemini.api_key:
+            return self.providers.gemini.proxy
+        if self.providers.zhipu.api_key:
+            return self.providers.zhipu.proxy
+        if self.providers.groq.api_key:
+            return self.providers.groq.proxy
+        if self.providers.vllm.api_key or self.providers.vllm.api_base:
+            return self.providers.vllm.proxy
+        return None
+
+    def get_drop_params(self) -> bool:
+        """Check if optional params should be dropped for the active provider."""
+        if self.providers.openrouter.api_key:
+            return self.providers.openrouter.drop_params
+        if self.providers.deepseek.api_key:
+            return self.providers.deepseek.drop_params
+        if self.providers.anthropic.api_key:
+            return self.providers.anthropic.drop_params
+        if self.providers.openai.api_key:
+            return self.providers.openai.drop_params
+        if self.providers.gemini.api_key:
+            return self.providers.gemini.drop_params
+        if self.providers.zhipu.api_key:
+            return self.providers.zhipu.drop_params
+        if self.providers.groq.api_key:
+            return self.providers.groq.drop_params
+        if self.providers.vllm.api_key or self.providers.vllm.api_base:
+            return self.providers.vllm.drop_params
+        return False
     
     class Config:
         env_prefix = "NANOBOT_"
