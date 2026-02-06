@@ -1,10 +1,13 @@
 """LiteLLM provider implementation for multi-provider support."""
 
+import hashlib
+import json
 import os
+import re
 from typing import Any
 
 import litellm
-from litellm import acompletion
+from litellm import acompletion, aresponses
 
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 
@@ -21,19 +24,26 @@ class LiteLLMProvider(LLMProvider):
         self, 
         api_key: str | None = None, 
         api_base: str | None = None,
+        api_type: str | None = None,
+        extra_headers: dict[str, str] | None = None,
         default_model: str = "anthropic/claude-opus-4-5"
     ):
         super().__init__(api_key, api_base)
         self.default_model = default_model
+        self.api_type = api_type.lower() if api_type else None
+        self.extra_headers = extra_headers
         
         # Detect OpenRouter by api_key prefix or explicit api_base
         self.is_openrouter = (
             (api_key and api_key.startswith("sk-or-")) or
             (api_base and "openrouter" in api_base)
         )
-        
+
         # Track if using custom endpoint (vLLM, etc.)
-        self.is_vllm = bool(api_base) and not self.is_openrouter
+        # Don't treat openai/anthropic/deepseek/etc with custom api_base as vLLM
+        is_standard_provider = any(provider in default_model.lower() for provider in
+                                   ["openai", "gpt", "anthropic", "claude", "deepseek", "gemini"])
+        self.is_vllm = bool(api_base) and not self.is_openrouter and not is_standard_provider
         
         # Configure LiteLLM based on provider
         if api_key:
@@ -84,6 +94,15 @@ class LiteLLMProvider(LLMProvider):
             LLMResponse with content and/or tool calls.
         """
         model = model or self.default_model
+
+        if self._use_responses_api():
+            return await self._chat_with_responses(
+                messages=messages,
+                tools=tools,
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
         
         # For OpenRouter, prefix model name if not already prefixed
         if self.is_openrouter and not model.startswith("openrouter/"):
@@ -119,8 +138,9 @@ class LiteLLMProvider(LLMProvider):
             kwargs["api_base"] = self.api_base
         
         if tools:
-            kwargs["tools"] = tools
-            kwargs["tool_choice"] = "auto"
+            kwargs["tools"] = self._convert_tools_to_responses(tools)
+        if self.extra_headers:
+            kwargs["extra_headers"] = self.extra_headers
         
         try:
             response = await acompletion(**kwargs)
@@ -131,7 +151,47 @@ class LiteLLMProvider(LLMProvider):
                 content=f"Error calling LLM: {str(e)}",
                 finish_reason="error",
             )
-    
+
+    def _use_responses_api(self) -> bool:
+        if not self.api_type:
+            return False
+        return self.api_type in {"openai-responses", "openai_responses", "responses"}
+
+    async def _chat_with_responses(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        model: str,
+        max_tokens: int,
+        temperature: float,
+    ) -> LLMResponse:
+        input_items = self._messages_to_responses_input(messages)
+
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "input": input_items,
+            "max_output_tokens": max_tokens,
+            "temperature": temperature,
+        }
+
+        if self.api_base:
+            kwargs["api_base"] = self.api_base
+
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
+        if self.extra_headers:
+            kwargs["extra_headers"] = self.extra_headers
+
+        try:
+            response = await aresponses(**kwargs)
+            return self._parse_responses_response(response)
+        except Exception as e:
+            return LLMResponse(
+                content=f"Error calling LLM: {str(e)}",
+                finish_reason="error",
+            )
+
     def _parse_response(self, response: Any) -> LLMResponse:
         """Parse LiteLLM response into our standard format."""
         choice = response.choices[0]
@@ -169,6 +229,273 @@ class LiteLLMProvider(LLMProvider):
             finish_reason=choice.finish_reason or "stop",
             usage=usage,
         )
+
+    def _parse_responses_response(self, response: Any) -> LLMResponse:
+        """Parse LiteLLM Responses API response into our standard format."""
+        content = ""
+        if hasattr(response, "output_text"):
+            content = response.output_text or ""
+
+        tool_calls: list[ToolCallRequest] = []
+        output_items = getattr(response, "output", None)
+        if output_items:
+            for item in output_items:
+                item_type = item.get("type") if isinstance(item, dict) else getattr(item, "type", None)
+                if item_type != "function_call":
+                    continue
+                name = item.get("name") if isinstance(item, dict) else getattr(item, "name", "")
+                arguments = item.get("arguments") if isinstance(item, dict) else getattr(item, "arguments", "")
+                call_id = (
+                    item.get("call_id") if isinstance(item, dict) else getattr(item, "call_id", None)
+                ) or (
+                    item.get("id") if isinstance(item, dict) else getattr(item, "id", None)
+                ) or ""
+
+                if isinstance(arguments, str):
+                    try:
+                        parsed_args = json.loads(arguments)
+                    except json.JSONDecodeError:
+                        parsed_args = {"raw": arguments}
+                else:
+                    parsed_args = arguments
+
+                tool_calls.append(ToolCallRequest(
+                    id=call_id,
+                    name=name or "",
+                    arguments=parsed_args or {},
+                ))
+
+        usage = {}
+        if hasattr(response, "usage") and response.usage:
+            usage = {
+                "prompt_tokens": response.usage.input_tokens,
+                "completion_tokens": response.usage.output_tokens,
+                "total_tokens": response.usage.total_tokens,
+            }
+
+        finish_reason = "stop"
+        status = getattr(response, "status", None)
+        if status and status != "completed":
+            finish_reason = status
+
+        return LLMResponse(
+            content=content,
+            tool_calls=tool_calls,
+            finish_reason=finish_reason,
+            usage=usage,
+        )
+
+    def _messages_to_responses_input(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        msg_index = 0
+
+        for msg in messages:
+            role = msg.get("role")
+            if role == "tool":
+                items.append(self._tool_output_to_response_item(msg))
+                continue
+
+            if role == "assistant":
+                tool_calls = msg.get("tool_calls") or []
+                content = msg.get("content")
+                has_content = content not in (None, "") or (isinstance(content, list) and len(content) > 0)
+                if has_content:
+                    assistant_item = self._assistant_message_to_response_item(content, msg_index)
+                    if assistant_item:
+                        items.append(assistant_item)
+                        msg_index += 1
+                elif not tool_calls:
+                    assistant_item = self._assistant_message_to_response_item("", msg_index)
+                    if assistant_item:
+                        items.append(assistant_item)
+                        msg_index += 1
+
+                for tc in tool_calls:
+                    items.append(self._tool_call_to_response_item(tc))
+                continue
+
+            if role in {"system", "developer"}:
+                items.append(self._system_message_to_response_item(role, msg.get("content")))
+                continue
+
+            items.append(self._user_message_to_response_item(msg.get("content")))
+
+        return items
+
+    def _assistant_message_to_response_item(self, content: Any, index: int) -> dict[str, Any] | None:
+        output_items = self._convert_assistant_content(content)
+        if not output_items:
+            return None
+        msg_id = f"msg_{index}"
+        if len(msg_id) > 64:
+            msg_id = f"msg_{self._short_hash(msg_id)}"
+        return {
+            "type": "message",
+            "role": "assistant",
+            "content": output_items,
+            "status": "completed",
+            "id": msg_id,
+        }
+
+    def _make_output_text(self, text: str, annotations: list[Any] | None = None) -> dict[str, Any]:
+        return {
+            "type": "output_text",
+            "text": text,
+            "annotations": annotations or [],
+        }
+
+    def _convert_assistant_content(self, content: Any) -> list[dict[str, Any]]:
+        if content is None:
+            return []
+        if isinstance(content, str):
+            return [self._make_output_text(content)]
+        if isinstance(content, list):
+            converted: list[dict[str, Any]] = []
+            for item in content:
+                if isinstance(item, str):
+                    converted.append(self._make_output_text(item))
+                    continue
+                if isinstance(item, dict):
+                    item_type = item.get("type")
+                    if item_type == "output_text":
+                        converted.append(
+                            self._make_output_text(
+                                item.get("text", ""),
+                                annotations=item.get("annotations"),
+                            )
+                        )
+                        continue
+                    if item_type in {"text", "input_text"}:
+                        converted.append(self._make_output_text(item.get("text", "")))
+                        continue
+                    converted.append(self._make_output_text(json.dumps(item, ensure_ascii=False)))
+                    continue
+                converted.append(self._make_output_text(str(item)))
+            return converted
+        return [self._make_output_text(str(content))]
+
+    def _user_message_to_response_item(self, content: Any) -> dict[str, Any]:
+        return {
+            "role": "user",
+            "content": self._convert_user_content(content),
+        }
+
+    def _system_message_to_response_item(self, role: str, content: Any) -> dict[str, Any]:
+        if isinstance(content, str) or content is None:
+            return {"role": role, "content": content or ""}
+        return {"role": role, "content": self._convert_user_content(content)}
+
+    def _convert_user_content(self, content: Any) -> list[dict[str, Any]]:
+        if content is None:
+            return [{"type": "input_text", "text": ""}]
+        if isinstance(content, str):
+            return [{"type": "input_text", "text": content}]
+        if isinstance(content, list):
+            converted: list[dict[str, Any]] = []
+            for item in content:
+                if isinstance(item, str):
+                    converted.append({"type": "input_text", "text": item})
+                    continue
+                if isinstance(item, dict):
+                    item_type = item.get("type")
+                    if item_type in {"input_text", "input_image"}:
+                        converted.append(item)
+                        continue
+                    if item_type == "text":
+                        converted.append({"type": "input_text", "text": item.get("text", "")})
+                        continue
+                    if item_type == "image_url":
+                        image_url = item.get("image_url")
+                        if isinstance(image_url, dict):
+                            image_url = image_url.get("url")
+                        if image_url:
+                            converted.append(
+                                {"type": "input_image", "image_url": image_url, "detail": "auto"}
+                            )
+                            continue
+                    converted.append({"type": "input_text", "text": json.dumps(item, ensure_ascii=False)})
+                    continue
+                converted.append({"type": "input_text", "text": str(item)})
+            return converted
+        return [{"type": "input_text", "text": str(content)}]
+
+    def _short_hash(self, value: str) -> str:
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+    def _normalize_call_id(self, value: str | None) -> str:
+        if not value:
+            return ""
+        sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", value)
+        if len(sanitized) > 64:
+            sanitized = sanitized[:64]
+        return sanitized
+
+    def _normalize_item_id(self, value: str | None) -> str | None:
+        if not value:
+            return None
+        sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", value)
+        normalized = sanitized if sanitized.startswith("fc") else f"fc_{sanitized}"
+        if len(normalized) > 64:
+            normalized = f"fc_{self._short_hash(normalized)}"
+        if len(normalized) > 64:
+            normalized = normalized[:64]
+        return normalized
+
+    def _convert_tools_to_responses(self, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        converted: list[dict[str, Any]] = []
+        for tool in tools:
+            if not isinstance(tool, dict):
+                continue
+            if tool.get("type") == "function" and "function" in tool:
+                func = tool.get("function") or {}
+                converted.append(
+                    {
+                        "type": "function",
+                        "name": func.get("name", ""),
+                        "description": func.get("description", ""),
+                        "parameters": func.get("parameters") or {},
+                        "strict": False,
+                    }
+                )
+                continue
+            if tool.get("type") == "function" and "name" in tool:
+                normalized = dict(tool)
+                normalized.setdefault("strict", False)
+                converted.append(normalized)
+                continue
+            converted.append(tool)
+        return converted
+
+    def _tool_call_to_response_item(self, tool_call: dict[str, Any]) -> dict[str, Any]:
+        call_id = tool_call.get("id") or tool_call.get("call_id") or ""
+        func = tool_call.get("function", {}) if isinstance(tool_call, dict) else {}
+        name = func.get("name") or tool_call.get("name") or ""
+        arguments = func.get("arguments") or tool_call.get("arguments") or ""
+        if not isinstance(arguments, str):
+            arguments = json.dumps(arguments)
+        if not call_id:
+            call_id = f"{name}_{self._short_hash(arguments)}"
+        normalized_call_id = self._normalize_call_id(call_id)
+        item_id = self._normalize_item_id(call_id)
+        return {
+            "type": "function_call",
+            "call_id": normalized_call_id,
+            "name": name,
+            "arguments": arguments,
+            "id": item_id,
+        }
+
+    def _tool_output_to_response_item(self, msg: dict[str, Any]) -> dict[str, Any]:
+        call_id = msg.get("tool_call_id") or msg.get("id") or ""
+        normalized_call_id = self._normalize_call_id(call_id)
+        output = msg.get("content", "")
+        if not isinstance(output, str):
+            output = json.dumps(output)
+        return {
+            "type": "function_call_output",
+            "call_id": normalized_call_id,
+            "output": output,
+        }
     
     def get_default_model(self) -> str:
         """Get the default model."""
