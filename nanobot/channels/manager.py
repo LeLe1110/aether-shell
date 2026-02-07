@@ -89,7 +89,7 @@ class ChannelManager:
                 )
                 logger.info("Web channel enabled")
             except ImportError as e:
-                logger.warning(f"Web channel not available: {e}. Install nanobot-web package.")
+                logger.warning(f"Web channel not available: {e}")
     
     async def start_all(self) -> None:
         """Start WhatsApp channel and the outbound dispatcher."""
