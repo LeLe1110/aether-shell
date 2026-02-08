@@ -3,101 +3,125 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#1a1a2e">
+    <meta name="theme-color" content="#f59e0b">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Nanobot">
     <title>Nanobot</title>
-    <link rel="stylesheet" href="/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spline+Sans:wght@300;400;500;600;700&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap">
+    <link rel="stylesheet" href="/css/style.css?v=20260208a">
     <link rel="manifest" href="/manifest.json">
     <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
     <link rel="apple-touch-icon" href="/icons/icon-192.png">
 </head>
 <body>
     <!-- Login View -->
-    <div id="login-view" class="view">
-        <div class="login-container">
-            <div class="login-logo">
-                <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
-                    <rect width="64" height="64" rx="16" fill="#4f46e5"/>
-                    <path d="M20 28C20 24 24 20 32 20C40 20 44 24 44 28C44 32 40 34 38 35C36 36 36 37 36 38H28C28 36 28 34 31 32C33 30 36 29 36 28C36 26.5 34.5 25 32 25C29.5 25 28 26.5 28 28H20Z" fill="white"/>
-                    <circle cx="32" cy="44" r="3" fill="white"/>
-                </svg>
+    <div id="login-view" class="view login-view">
+        <div class="login-card">
+            <div class="login-brand">
+                <div class="login-icon" aria-hidden="true">
+                    <span class="material-symbols-outlined">pets</span>
+                </div>
+                <div>
+                    <h1>Nanobot</h1>
+                    <p>Invite-only AI companion</p>
+                </div>
             </div>
-            <h1>Nanobot</h1>
             <p class="login-subtitle">Enter invite code to start chatting</p>
             <form id="login-form">
+                <label class="sr-only" for="invite-code">Invite code</label>
                 <input type="password" id="invite-code" placeholder="Invite code" autocomplete="off" required>
-                <button type="submit" id="login-btn">Login</button>
+                <button type="submit" id="login-btn">
+                    <span class="material-symbols-outlined" aria-hidden="true">login</span>
+                    Login
+                </button>
             </form>
-            <p id="login-error" class="error-text"></p>
+            <p id="login-error" class="error-text" aria-live="polite"></p>
         </div>
     </div>
 
     <!-- Chat View -->
-    <div id="chat-view" class="view hidden">
-        <header class="chat-header">
-            <button id="sidebar-toggle" class="icon-btn" aria-label="Menu">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
-                </svg>
-            </button>
-            <h2 id="chat-title">Nanobot</h2>
-            <button id="new-chat-btn" class="icon-btn" aria-label="New chat">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                </svg>
-            </button>
-        </header>
-
+    <div id="chat-view" class="view chat-view hidden">
         <!-- Sidebar -->
         <aside id="sidebar" class="sidebar">
-            <div class="sidebar-header">
-                <h3>Sessions</h3>
-                <button id="sidebar-close" class="icon-btn" aria-label="Close">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
+            <div class="sidebar-head">
+                <div class="sidebar-profile">
+                    <div class="sidebar-avatar" aria-hidden="true"></div>
+                    <div>
+                        <h2>Nanobot</h2>
+                        <span class="status-pill">
+                            <span class="status-dot" aria-hidden="true"></span>
+                            Online
+                        </span>
+                    </div>
+                </div>
+                <button id="sidebar-close" class="icon-btn icon-btn-ghost" aria-label="Close">
+                    <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
-            <ul id="session-list"></ul>
-            <button id="logout-btn" class="logout-btn">Logout</button>
+            <p class="sidebar-title">Recent Chats</p>
+            <ul id="session-list" class="session-list"></ul>
+            <button id="logout-btn" class="sidebar-logout">
+                <span class="material-symbols-outlined" aria-hidden="true">logout</span>
+                Logout
+            </button>
         </aside>
         <div id="sidebar-overlay" class="sidebar-overlay"></div>
 
-        <!-- Messages -->
-        <main id="messages" class="messages"></main>
+        <!-- Main Content Area -->
+        <main class="chat-main">
+            <div class="chat-shell">
+                <header class="chat-header">
+                    <div class="header-row">
+                        <button id="sidebar-toggle" class="icon-btn icon-btn-ghost" aria-label="Menu">
+                            <span class="material-symbols-outlined">menu</span>
+                        </button>
+                        <div class="chat-title-wrap">
+                            <h2 id="chat-title">Nanobot</h2>
+                            <span class="chat-status">
+                                <span class="status-dot" aria-hidden="true"></span>
+                                Online
+                            </span>
+                        </div>
+                        <button id="new-chat-btn" class="cat-ear-btn" aria-label="New chat">
+                            <span class="material-symbols-outlined" aria-hidden="true">add</span>
+                            <span>New Chat</span>
+                        </button>
+                    </div>
+                    <div id="context-bar" class="context-bar hidden"></div>
+                </header>
 
-        <!-- Context Status Bar (fixed, updated per message) -->
-        <div id="context-bar" class="context-bar hidden"></div>
+                <main id="messages" class="messages"></main>
 
-        <!-- Input -->
-        <div class="input-container">
-            <div id="attachment-preview" class="attachment-preview hidden"></div>
-            <form id="message-form">
-                <button type="button" id="attach-btn" class="icon-btn attach-btn" aria-label="Attach file">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
-                    </svg>
-                </button>
-                <input type="file" id="file-input" multiple accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.zip" hidden>
-                <textarea id="message-input" placeholder="Type a message..." rows="1" autocomplete="off"></textarea>
-                <button type="submit" id="send-btn" aria-label="Send">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-                    </svg>
-                </button>
-            </form>
-        </div>
+                <div class="input-container">
+                    <div id="attachment-preview" class="attachment-preview hidden"></div>
+                    <form id="message-form">
+                        <button type="button" id="attach-btn" class="icon-btn icon-btn-soft attach-btn" aria-label="Attach file">
+                            <span class="material-symbols-outlined">add_circle</span>
+                        </button>
+                        <input type="file" id="file-input" multiple accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.zip" hidden>
+                        <textarea id="message-input" placeholder="Type a message..." rows="1" autocomplete="off"></textarea>
+                        <button type="submit" id="send-btn" aria-label="Send">
+                            <span class="material-symbols-outlined">send</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </main>
 
         <!-- Lightbox -->
-        <div id="lightbox" class="lightbox hidden" role="dialog">
-            <button id="lightbox-close" class="lightbox-close" aria-label="Close">&times;</button>
+        <div id="lightbox" class="lightbox hidden" role="dialog" aria-modal="true">
+            <button id="lightbox-close" class="lightbox-close" aria-label="Close">
+                <span class="material-symbols-outlined">close</span>
+            </button>
             <img id="lightbox-img" src="" alt="Preview">
         </div>
     </div>
 
-    <script src="/js/app.js"></script>
+    <script src="/js/app.js?v=20260208a"></script>
 </body>
 </html>

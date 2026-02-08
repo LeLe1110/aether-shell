@@ -11,6 +11,8 @@
     const streams = {};
     // Pending file uploads: [{file, path, file_id, filename, content_type}]
     let pendingAttachments = [];
+    // Track message_ids sent from this client to deduplicate user_message SSE events
+    const sentMessageIds = new Set();
 
     // === DOM ===
     const loginView = document.getElementById('login-view');
@@ -168,9 +170,16 @@
     }
 
     // === SSE ===
+    var sseReconnectTimer = null;
+    var lastEventId = '';
+
     function connectSSE() {
-        if (eventSource) { eventSource.close(); }
-        const url = API + '/api/messages/stream?token=' + encodeURIComponent(token);
+        if (sseReconnectTimer) { clearTimeout(sseReconnectTimer); sseReconnectTimer = null; }
+        if (eventSource) { eventSource.close(); eventSource = null; }
+        var url = API + '/api/messages/stream?token=' + encodeURIComponent(token);
+        if (lastEventId) {
+            url += '&lastEventId=' + encodeURIComponent(lastEventId);
+        }
         eventSource = new EventSource(url);
 
         eventSource.addEventListener('connected', (e) => {
@@ -178,20 +187,79 @@
         });
 
         eventSource.addEventListener('delta', (e) => {
+            if (e.lastEventId) lastEventId = e.lastEventId;
             const data = JSON.parse(e.data);
             handleDelta(data);
         });
 
         eventSource.addEventListener('message', (e) => {
+            if (e.lastEventId) lastEventId = e.lastEventId;
             const data = JSON.parse(e.data);
             handleMessage(data);
         });
 
+        eventSource.addEventListener('user_message', (e) => {
+            if (e.lastEventId) lastEventId = e.lastEventId;
+            const data = JSON.parse(e.data);
+            // Skip if this client sent the message (already rendered in DOM)
+            if (data.message_id && sentMessageIds.has(data.message_id)) {
+                sentMessageIds.delete(data.message_id);
+                return;
+            }
+            // Render user message from another device
+            appendMessage('user', data.content || '', true);
+            scrollToBottom();
+        });
+
         eventSource.onerror = () => {
             console.warn('SSE error, reconnecting in 3s...');
-            eventSource.close();
-            setTimeout(connectSSE, 3000);
+            if (eventSource) { eventSource.close(); eventSource = null; }
+            sseReconnectTimer = setTimeout(connectSSE, 3000);
         };
+    }
+
+    // === Visibility change: reconnect SSE + catch up missed messages ===
+    document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible' && token) {
+            // Reconnect SSE immediately if it's dead
+            if (!eventSource || eventSource.readyState === EventSource.CLOSED) {
+                connectSSE();
+            }
+            // Catch up any messages we missed while the tab was hidden
+            catchUpMessages();
+        }
+    });
+
+    async function catchUpMessages() {
+        if (!currentSessionId) return;
+        try {
+            var res = await fetch(API + '/api/sessions/' + encodeURIComponent(currentSessionId) + '/messages?limit=50', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            if (!res.ok) return;
+            var data = await res.json();
+            var serverMsgs = data.messages || [];
+            if (serverMsgs.length === 0) return;
+
+            // Count existing non-streaming messages in DOM
+            var existingEls = messagesEl.querySelectorAll('.message:not(.streaming)');
+            var existingCount = existingEls.length;
+
+            // If server has more messages, the simple diff might be wrong
+            // (e.g. messages from another device). Do a full reload.
+            if (serverMsgs.length !== existingCount) {
+                // Remove all non-streaming messages and re-render from server
+                Array.from(existingEls).forEach(function (el) { el.remove(); });
+                serverMsgs.forEach(function (m) {
+                    var el = appendMessage(m.role, '');
+                    var contentEl = el.querySelector('.msg-content');
+                    contentEl.innerHTML = renderMarkdown(m.content);
+                });
+                scrollToBottom();
+            }
+        } catch (e) {
+            console.warn('catchUpMessages error:', e);
+        }
     }
 
     function handleDelta(data) {
@@ -265,7 +333,7 @@
                 container.appendChild(a);
             }
         });
-        msgEl.appendChild(container);
+        getMessageBody(msgEl).appendChild(container);
     }
 
     // === Context status bar (fixed position, updates on each message) ===
@@ -311,7 +379,9 @@
             contextBar.classList.add('hidden');
             return;
         }
-        contextBar.textContent = parts.join('｜');
+        contextBar.innerHTML = parts.map(function (p) {
+            return '<span class="ctx-item">' + p + '</span>';
+        }).join('');
         contextBar.classList.remove('hidden');
     }
 
@@ -368,6 +438,12 @@
 
         // Generate dedup message_id
         var messageId = Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+        sentMessageIds.add(messageId);
+        // Cap the set size to avoid unbounded growth
+        if (sentMessageIds.size > 200) {
+            var first = sentMessageIds.values().next().value;
+            sentMessageIds.delete(first);
+        }
 
         // Collect media paths from pending attachments
         var mediaPaths = pendingAttachments.map(function (a) { return a.path; }).filter(Boolean);
@@ -438,12 +514,38 @@
                 container.appendChild(span);
             }
         });
-        msgEl.appendChild(container);
+        getMessageBody(msgEl).appendChild(container);
+    }
+
+    function getMessageBody(msgEl) {
+        return msgEl.querySelector('.msg-body') || msgEl;
     }
 
     function appendMessage(role, content, isPlainText) {
+        const safeRole = role === 'user' ? 'user' : 'assistant';
         const div = document.createElement('div');
-        div.className = 'message ' + role;
+        div.className = 'message ' + safeRole;
+
+        const avatar = document.createElement('div');
+        avatar.className = 'msg-avatar ' + safeRole;
+        if (safeRole === 'assistant') {
+            const img = document.createElement('img');
+            img.src = 'https://lh3.googleusercontent.com/aida-public/AB6AXuAnTgNMSWaolorX1KbBnPvmYBhCltmdngCLe1-_mc3ZOtO6me-1HJfZsDr6MFEcrtCvHifvaHr6lEDGiRfmVfJ2rKecaU8sSFPrbJorycVKulM7iR4TqaSlxfVfq9dQxji_Gbx82L-b5W7SIVMnLhVIil_VZTQmQdg8TV1YvKGfRsD8hF-6Qn7TY6355PpBUka3JP0_M9ppdmVOvha_3SAUofzcs1gS3o147DcMrreGHN9c2vdYL6bMT1g1V7HPHO7_JDwO-yEmTgU';
+            img.alt = 'Nanobot avatar';
+            avatar.appendChild(img);
+        } else {
+            const icon = document.createElement('span');
+            icon.className = 'material-symbols-outlined';
+            icon.textContent = 'person';
+            avatar.appendChild(icon);
+        }
+
+        const body = document.createElement('div');
+        body.className = 'msg-body';
+
+        const name = document.createElement('div');
+        name.className = 'msg-name';
+        name.textContent = safeRole === 'assistant' ? 'Nanobot' : 'You';
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'msg-content';
@@ -452,7 +554,11 @@
         } else {
             contentDiv.innerHTML = renderMarkdown(content);
         }
-        div.appendChild(contentDiv);
+
+        body.appendChild(name);
+        body.appendChild(contentDiv);
+        div.appendChild(avatar);
+        div.appendChild(body);
 
         messagesEl.appendChild(div);
         return div;
@@ -580,10 +686,18 @@
         sessions.forEach(function (s) {
             var li = document.createElement('li');
 
+            var icon = document.createElement('span');
+            icon.className = 'session-icon material-symbols-outlined';
+            icon.textContent = 'chat_bubble';
+            li.appendChild(icon);
+
+            var info = document.createElement('div');
+            info.className = 'session-info';
+
             var titleSpan = document.createElement('span');
             titleSpan.className = 'session-title';
             titleSpan.textContent = s.title || 'New Chat';
-            li.appendChild(titleSpan);
+            info.appendChild(titleSpan);
 
             var metaSpan = document.createElement('span');
             metaSpan.className = 'session-meta';
@@ -596,7 +710,9 @@
                 } catch (e) { /* ignore */ }
             }
             metaSpan.textContent = parts.join(' · ');
-            li.appendChild(metaSpan);
+            info.appendChild(metaSpan);
+
+            li.appendChild(info);
 
             li.dataset.id = s.session_id;
             if (s.session_id === currentSessionId) li.classList.add('active');
@@ -667,6 +783,13 @@
                 chatTitle.textContent = data.session.title || 'New Chat';
                 messagesEl.innerHTML = '';
                 contextBar.classList.add('hidden');
+                // Show the greeting from the HTTP response (not SSE)
+                if (data.session.greeting) {
+                    var el = appendMessage('assistant', '');
+                    var contentEl = el.querySelector('.msg-content') || el;
+                    contentEl.innerHTML = renderMarkdown(data.session.greeting);
+                    scrollToBottom();
+                }
                 closeSidebar();
                 loadSessions();
             }
@@ -878,8 +1001,16 @@
     }
 
     // === SW Registration ===
+    // Unregister any old Service Workers and clear their caches
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
+        navigator.serviceWorker.getRegistrations().then(function (regs) {
+            regs.forEach(function (r) { r.unregister(); });
+        });
+        if ('caches' in window) {
+            caches.keys().then(function (keys) {
+                keys.forEach(function (k) { caches.delete(k); });
+            });
+        }
     }
 
     // === Start ===

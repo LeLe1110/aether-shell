@@ -6,9 +6,10 @@ import json
 import mimetypes
 import os
 import pathlib
+import threading
 import time
 import uuid
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from datetime import datetime
 from typing import Any
 
@@ -45,6 +46,12 @@ class HTTPChannel(BaseChannel):
         self._clients: dict[str, list[asyncio.Queue]] = {}
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
+        # SSE event ID counter and ring buffer for Last-Event-ID replay
+        self._event_id_counter: int = 0
+        self._event_id_lock = threading.Lock()
+        # chat_id -> deque of (event_id: int, payload: str)
+        self._event_buffer: dict[str, deque] = {}
+        self._event_buffer_size = 2000
         # Persistent sessions directory
         self._sessions_dir = pathlib.Path.home() / ".nanobot" / "sessions"
         # Message deduplication: message_id -> None (LRU, max 1000)
@@ -72,9 +79,9 @@ class HTTPChannel(BaseChannel):
         self._app.router.add_get("/api/media/{file_id}", self._handle_media)
         # Static files and SPA fallback
         self._app.router.add_get("/", self._handle_index)
-        self._app.router.add_static("/css/", STATIC_DIR / "css", show_index=False)
-        self._app.router.add_static("/js/", STATIC_DIR / "js", show_index=False)
-        self._app.router.add_static("/icons/", STATIC_DIR / "icons", show_index=False)
+        self._app.router.add_get("/css/{filename}", self._handle_static_asset)
+        self._app.router.add_get("/js/{filename}", self._handle_static_asset)
+        self._app.router.add_get("/icons/{filename}", self._handle_static_asset)
         self._app.router.add_get("/manifest.json", self._handle_static_file)
         self._app.router.add_get("/sw.js", self._handle_static_file)
 
@@ -106,12 +113,17 @@ class HTTPChannel(BaseChannel):
         """Push an outbound message to all SSE clients for the chat_id."""
         t_start = time.monotonic()
         chat_id = msg.chat_id
+        meta = msg.metadata or {}
+
+        # Skip messages flagged to suppress SSE delivery (e.g. /new greeting
+        # which is delivered via the HTTP response instead).
+        if meta.get("_suppress_outbound"):
+            return
+
         queues = self._clients.get(chat_id, [])
         if not queues:
             logger.debug(f"Web send: no SSE clients for chat_id={chat_id}")
             return
-
-        meta = msg.metadata or {}
         is_stream = meta.get("stream", False)
         stream_id = meta.get("stream_id")
         is_final = meta.get("final", False)
@@ -179,7 +191,16 @@ class HTTPChannel(BaseChannel):
                     })
                 event_data["media"] = media_list
 
-        payload = f"event: {event_name}\ndata: {json.dumps(event_data, ensure_ascii=False)}\n\n"
+        # Assign incremental event ID for Last-Event-ID support
+        with self._event_id_lock:
+            self._event_id_counter += 1
+            event_id = self._event_id_counter
+        payload = f"id: {event_id}\nevent: {event_name}\ndata: {json.dumps(event_data, ensure_ascii=False)}\n\n"
+
+        # Buffer event for replay on reconnect
+        if chat_id not in self._event_buffer:
+            self._event_buffer[chat_id] = deque(maxlen=self._event_buffer_size)
+        self._event_buffer[chat_id].append((event_id, payload))
 
         dead: list[asyncio.Queue] = []
         for q in queues:
@@ -286,6 +307,27 @@ class HTTPChannel(BaseChannel):
             media=validated_media,
         )
 
+        # Broadcast user message to all SSE clients so other devices see it
+        user_event_data = {
+            "type": "user_message",
+            "content": content,
+            "chat_id": chat_id,
+            "role": "user",
+            "message_id": message_id or "",
+        }
+        with self._event_id_lock:
+            self._event_id_counter += 1
+            eid = self._event_id_counter
+        user_payload = f"id: {eid}\nevent: user_message\ndata: {json.dumps(user_event_data, ensure_ascii=False)}\n\n"
+        if chat_id not in self._event_buffer:
+            self._event_buffer[chat_id] = deque(maxlen=self._event_buffer_size)
+        self._event_buffer[chat_id].append((eid, user_payload))
+        for q in list(self._clients.get(chat_id, [])):
+            try:
+                q.put_nowait(user_payload)
+            except asyncio.QueueFull:
+                pass
+
         return web.json_response({"status": "ok"})
 
     # ---- SSE ----
@@ -318,6 +360,19 @@ class HTTPChannel(BaseChannel):
         # Send connected event
         connected_payload = f"event: connected\ndata: {json.dumps({'chat_id': chat_id})}\n\n"
         await response.write(connected_payload.encode("utf-8"))
+
+        # Replay missed events if client sends Last-Event-ID
+        last_event_id_str = request.headers.get("Last-Event-ID") or request.query.get("lastEventId", "")
+        if last_event_id_str:
+            try:
+                last_event_id = int(last_event_id_str)
+                buf = self._event_buffer.get(chat_id)
+                if buf:
+                    for eid, epayload in buf:
+                        if eid > last_event_id:
+                            await response.write(epayload.encode("utf-8"))
+            except (ValueError, TypeError):
+                pass
 
         try:
             while True:
@@ -497,11 +552,16 @@ class HTTPChannel(BaseChannel):
 
         # Send /new command through the agent pipeline so SessionManager
         # creates the new session in its own memory cache and on disk.
+        # Mark _suppress_outbound so the SSE channel won't push the greeting
+        # (the HTTP response includes it instead, avoiding a race condition).
         await self._handle_message(
             sender_id=sender_id,
             chat_id=chat_id,
             content="/new",
-            metadata={"session_key": f"web:{chat_id}:default"},
+            metadata={
+                "session_key": f"web:{chat_id}:default",
+                "_suppress_outbound": True,
+            },
         )
 
         # The /new is processed async via the message bus.
@@ -519,6 +579,7 @@ class HTTPChannel(BaseChannel):
             "session": {
                 "session_id": session_id,
                 "title": "New Chat",
+                "greeting": "✅ 已开启新会话（历史已保留）。你好！我能帮你做什么？",
             }
         })
 
@@ -593,8 +654,20 @@ class HTTPChannel(BaseChannel):
 
     # ---- Static files ----
 
-    async def _handle_index(self, request: web.Request) -> web.FileResponse:
-        return web.FileResponse(STATIC_DIR / "index.html")
+    def _no_cache_headers(self, resp: web.StreamResponse) -> None:
+        """Apply aggressive no-cache headers (defeats Cloudflare edge cache)."""
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        resp.headers["CDN-Cache-Control"] = "no-store"
+        resp.headers["Cloudflare-CDN-Cache-Control"] = "no-store"
+
+    async def _handle_index(self, request: web.Request) -> web.Response:
+        filepath = STATIC_DIR / "index.html"
+        content = filepath.read_text("utf-8")
+        resp = web.Response(text=content, content_type="text/html", charset="utf-8")
+        self._no_cache_headers(resp)
+        return resp
 
     async def _handle_static_file(self, request: web.Request) -> web.Response:
         filename = request.path.lstrip("/")
@@ -602,9 +675,17 @@ class HTTPChannel(BaseChannel):
         if not filepath.exists():
             filepath = STATIC_DIR / "index.html"
         resp = web.FileResponse(filepath)
-        # Prevent browser from caching sw.js — ensures SW updates propagate immediately
-        if filename == "sw.js":
-            resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        self._no_cache_headers(resp)
+        return resp
+
+    async def _handle_static_asset(self, request: web.Request) -> web.Response:
+        """Serve CSS/JS/icon files with no-cache headers."""
+        rel_path = request.path.lstrip("/")
+        filepath = STATIC_DIR / rel_path
+        if not filepath.exists() or not filepath.is_file():
+            return web.Response(status=404, text="Not found")
+        resp = web.FileResponse(filepath)
+        self._no_cache_headers(resp)
         return resp
 
     # ---- Upload (user -> bot) ----
