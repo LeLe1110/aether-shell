@@ -163,37 +163,35 @@ class Config(BaseSettings):
         """Get expanded workspace path."""
         return Path(self.agents.defaults.workspace).expanduser()
     
-    # Default base URLs for API gateways
-    _GATEWAY_DEFAULTS = {"openrouter": "https://openrouter.ai/api/v1", "aihubmix": "https://aihubmix.com/v1"}
-
     def get_provider(self, model: str | None = None) -> ProviderConfig | None:
         """Get matched provider config (api_key, api_base, extra_headers). Falls back to first available."""
-        model = (model or self.agents.defaults.model).lower()
-        p = self.providers
+        from nanobot.providers.registry import PROVIDERS
+        model_lower = (model or self.agents.defaults.model).lower()
+
         def _ready(provider: ProviderConfig, allow_api_base: bool = False) -> bool:
             if provider.api_key:
                 return True
             if allow_api_base and provider.api_base:
                 return True
             return False
-        # Keyword → provider mapping (order matters: gateways first)
-        keyword_map = {
-            "aihubmix": p.aihubmix, "openrouter": p.openrouter,
-            "deepseek": p.deepseek, "anthropic": p.anthropic, "claude": p.anthropic,
-            "openai": p.openai, "gpt": p.openai, "gemini": p.gemini,
-            "zhipu": p.zhipu, "glm": p.zhipu, "zai": p.zhipu,
-            "dashscope": p.dashscope, "qwen": p.dashscope,
-            "groq": p.groq, "moonshot": p.moonshot, "kimi": p.moonshot, "vllm": p.vllm,
-        }
-        for kw, provider in keyword_map.items():
-            if kw in model and _ready(provider, allow_api_base=(provider is p.vllm)):
-                return provider
-        # Fallback: gateways first (can serve any model), then specific providers
-        all_providers = [p.openrouter, p.aihubmix, p.anthropic, p.openai, p.deepseek,
-                         p.gemini, p.zhipu, p.dashscope, p.moonshot, p.vllm, p.groq]
-        for provider in all_providers:
-            if _ready(provider, allow_api_base=(provider is p.vllm)):
-                return provider
+
+        # Match by keyword (order follows PROVIDERS registry)
+        for spec in PROVIDERS:
+            p = getattr(self.providers, spec.name, None)
+            if not p:
+                continue
+            allow_api_base = bool(spec.is_local)
+            if any(kw in model_lower for kw in spec.keywords) and _ready(p, allow_api_base=allow_api_base):
+                return p
+
+        # Fallback: gateways first, then others (follows registry order)
+        for spec in PROVIDERS:
+            p = getattr(self.providers, spec.name, None)
+            if not p:
+                continue
+            allow_api_base = bool(spec.is_local)
+            if _ready(p, allow_api_base=allow_api_base):
+                return p
         return None
 
     def get_api_key(self, model: str | None = None) -> str | None:
@@ -203,13 +201,16 @@ class Config(BaseSettings):
     
     def get_api_base(self, model: str | None = None) -> str | None:
         """Get API base URL for the given model. Applies default URLs for known gateways."""
+        from nanobot.providers.registry import PROVIDERS
         p = self.get_provider(model)
         if p and p.api_base:
             return p.api_base
-        # Default URLs for known gateways (openrouter, aihubmix)
-        for name, url in self._GATEWAY_DEFAULTS.items():
-            if p == getattr(self.providers, name):
-                return url
+        # Only gateways get a default URL here. Standard providers (like Moonshot)
+        # handle their base URL via env vars in _setup_env, NOT via api_base —
+        # otherwise find_gateway() would misdetect them as local/vLLM.
+        for spec in PROVIDERS:
+            if spec.is_gateway and spec.default_api_base and p == getattr(self.providers, spec.name, None):
+                return spec.default_api_base
         return None
 
     def get_api_type(self, model: str | None = None) -> str | None:

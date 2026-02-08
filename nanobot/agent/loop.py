@@ -100,6 +100,7 @@ class AgentLoop:
         stream_min_interval_s: float = 0.5,
         context_config: "ContextConfig | None" = None,
         restrict_to_workspace: bool = False,
+        session_manager: SessionManager | None = None,
     ):
         from nanobot.config.schema import ExecToolConfig, ContextConfig
         from nanobot.cron.service import CronService
@@ -124,7 +125,7 @@ class AgentLoop:
             builder=self.context,
             default_model=self.model,
         )
-        self.sessions = SessionManager(workspace)
+        self.sessions = session_manager or SessionManager(workspace)
         self.tools = ToolRegistry()
         self.subagents = SubagentManager(
             provider=provider,
