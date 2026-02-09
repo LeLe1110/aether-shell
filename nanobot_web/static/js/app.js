@@ -161,6 +161,9 @@
                             var el = appendMessage(m.role, '');
                             var contentEl = el.querySelector('.msg-content');
                             contentEl.innerHTML = renderMarkdown(m.content);
+                            if (m.media && m.media.length > 0) {
+                                renderMediaAttachments(el, m.media);
+                            }
                         });
                         scrollToBottom();
                     }
@@ -254,6 +257,10 @@
                     var el = appendMessage(m.role, '');
                     var contentEl = el.querySelector('.msg-content');
                     contentEl.innerHTML = renderMarkdown(m.content);
+                    // Re-render media attachments if present
+                    if (m.media && m.media.length > 0) {
+                        renderMediaAttachments(el, m.media);
+                    }
                 });
                 scrollToBottom();
             }
@@ -759,6 +766,9 @@
                     var el = appendMessage(m.role, '');
                     var contentEl = el.querySelector('.msg-content');
                     contentEl.innerHTML = renderMarkdown(m.content);
+                    if (m.media && m.media.length > 0) {
+                        renderMediaAttachments(el, m.media);
+                    }
                 });
                 scrollToBottom();
             }

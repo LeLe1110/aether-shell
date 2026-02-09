@@ -511,11 +511,32 @@ class HTTPChannel(BaseChannel):
                     data = json.loads(line)
                     if data.get("_type") == "metadata":
                         continue
-                    messages.append({
+                    msg: dict = {
                         "role": data.get("role", ""),
                         "content": data.get("content", ""),
                         "timestamp": data.get("timestamp", ""),
-                    })
+                    }
+                    # Include media metadata when present so the frontend
+                    # can re-render attachments after a catchUp reload.
+                    media_paths: list[str] = data.get("media") or []
+                    if media_paths:
+                        media_list = []
+                        for item_path in media_paths:
+                            item_path = str(item_path)
+                            file_id = hashlib.sha256(item_path.encode()).hexdigest()[:16]
+                            # Ensure the file is registered so /api/media/ can serve it
+                            self._media_registry[file_id] = item_path
+                            filename = pathlib.Path(item_path).name
+                            content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+                            is_image = content_type.startswith("image/")
+                            media_list.append({
+                                "file_id": file_id,
+                                "filename": filename,
+                                "content_type": content_type,
+                                "is_image": is_image,
+                            })
+                        msg["media"] = media_list
+                    messages.append(msg)
         except Exception:
             return []
 

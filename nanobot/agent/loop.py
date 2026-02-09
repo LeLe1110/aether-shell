@@ -436,6 +436,16 @@ class AgentLoop:
         # Save to session
         t_save = time.monotonic()
         session.add_message("user", msg.content)
+        # Persist any messages the agent sent via the message tool (e.g. file
+        # attachments) as separate assistant entries so that catchUpMessages /
+        # session reload on the web frontend can re-render them.
+        _msg_tool = self.tools.get("message")
+        if isinstance(_msg_tool, MessageTool):
+            for sent in _msg_tool.drain_sent_messages():
+                kwargs: dict[str, Any] = {}
+                if sent.get("media"):
+                    kwargs["media"] = sent["media"]
+                session.add_message("assistant", sent["content"], **kwargs)
         session.add_message("assistant", final_content)
         self.sessions.save(session)
         save_time = time.monotonic() - t_save

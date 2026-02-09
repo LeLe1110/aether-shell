@@ -8,9 +8,9 @@ from nanobot.bus.events import OutboundMessage
 
 class MessageTool(Tool):
     """Tool to send messages to users on chat channels."""
-    
+
     def __init__(
-        self, 
+        self,
         send_callback: Callable[[OutboundMessage], Awaitable[None]] | None = None,
         default_channel: str = "",
         default_chat_id: str = ""
@@ -18,11 +18,16 @@ class MessageTool(Tool):
         self._send_callback = send_callback
         self._default_channel = default_channel
         self._default_chat_id = default_chat_id
-    
+        # Track messages sent during this processing cycle so the agent loop
+        # can persist them into the session history.
+        # Each entry: {"content": str, "media": list[str]}
+        self._sent_messages: list[dict[str, Any]] = []
+
     def set_context(self, channel: str, chat_id: str) -> None:
         """Set the current message context."""
         self._default_channel = channel
         self._default_chat_id = chat_id
+        self._sent_messages = []
     
     def set_send_callback(self, callback: Callable[[OutboundMessage], Awaitable[None]]) -> None:
         """Set the callback for sending messages."""
@@ -88,6 +93,19 @@ class MessageTool(Tool):
         
         try:
             await self._send_callback(msg)
+            self._sent_messages.append({
+                "content": content,
+                "media": media or [],
+            })
             return f"Message sent to {channel}:{chat_id}"
         except Exception as e:
             return f"Error sending message: {str(e)}"
+
+    def drain_sent_messages(self) -> list[dict[str, Any]]:
+        """Return and clear the list of messages sent during this cycle.
+
+        Each entry is ``{"content": str, "media": list[str]}``.
+        """
+        msgs = self._sent_messages
+        self._sent_messages = []
+        return msgs
