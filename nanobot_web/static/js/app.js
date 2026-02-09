@@ -40,8 +40,59 @@
     const lightboxClose = document.getElementById('lightbox-close');
     const contextBar = document.getElementById('context-bar');
 
+    const DEFAULT_PRODUCT_NAME = 'Nanobot';
+    const DEFAULT_ASSISTANT_NAME = 'Nanobot';
+    const DEFAULT_ASSISTANT_AVATAR_URL = 'https://lh3.googleusercontent.com/aida-public/AB6AXuAnTgNMSWaolorX1KbBnPvmYBhCltmdngCLe1-_mc3ZOtO6me-1HJfZsDr6MFEcrtCvHifvaHr6lEDGiRfmVfJ2rKecaU8sSFPrbJorycVKulM7iR4TqaSlxfVfq9dQxji_Gbx82L-b5W7SIVMnLhVIil_VZTQmQdg8TV1YvKGfRsD8hF-6Qn7TY6355PpBUka3JP0_M9ppdmVOvha_3SAUofzcs1gS3o147DcMrreGHN9c2vdYL6bMT1g1V7HPHO7_JDwO-yEmTgU';
+    const DEFAULT_NEW_CHAT_LABEL = 'New Chat';
+    const DEFAULT_USER_NAME = 'You';
+    const DEFAULT_USER_AVATAR_ICON = 'person';
+
+    function getBrand() {
+        return window.NANOBOT_BRAND || {};
+    }
+
+    function getBrandProductName() {
+        var brand = getBrand();
+        return brand.productName || DEFAULT_PRODUCT_NAME;
+    }
+
+    function getAssistantName() {
+        var brand = getBrand();
+        return brand.assistantName || brand.productName || DEFAULT_ASSISTANT_NAME;
+    }
+
+    function getAssistantAvatarUrl() {
+        var brand = getBrand();
+        return brand.assistantAvatarUrl || DEFAULT_ASSISTANT_AVATAR_URL;
+    }
+
+    function getNewChatLabel() {
+        var brand = getBrand();
+        return brand.newChatLabel || DEFAULT_NEW_CHAT_LABEL;
+    }
+
+    function getUserName() {
+        var brand = getBrand();
+        return brand.userName || DEFAULT_USER_NAME;
+    }
+
+    function getUserAvatarUrl() {
+        var brand = getBrand();
+        return brand.userAvatarUrl || '';
+    }
+
+    function getUserAvatarIcon() {
+        var brand = getBrand();
+        return brand.userAvatarIcon || DEFAULT_USER_AVATAR_ICON;
+    }
+
     // === Init ===
     async function init() {
+        if (window.NANOBOT_BRAND_READY) {
+            try {
+                await window.NANOBOT_BRAND_READY;
+            } catch (e) { /* ignore */ }
+        }
         if (token) {
             const valid = await checkAuth();
             if (valid) {
@@ -135,15 +186,18 @@
             if (!res.ok) return;
             const data = await res.json();
             var sessions = data.sessions || [];
+            var defaultTitle = getBrandProductName();
 
             // Sync currentSessionId before rendering so highlight is correct
             var active = sessions.find(function (s) { return s.active; });
             if (active) {
                 currentSessionId = active.session_id;
-                chatTitle.textContent = active.title;
+                chatTitle.textContent = active.title || defaultTitle;
             } else if (sessions.length > 0) {
                 currentSessionId = sessions[0].session_id;
-                chatTitle.textContent = sessions[0].title;
+                chatTitle.textContent = sessions[0].title || defaultTitle;
+            } else {
+                chatTitle.textContent = defaultTitle;
             }
 
             renderSessions(sessions);
@@ -530,6 +584,8 @@
 
     function appendMessage(role, content, isPlainText) {
         const safeRole = role === 'user' ? 'user' : 'assistant';
+        const assistantName = getAssistantName();
+        const userName = getUserName();
         const div = document.createElement('div');
         div.className = 'message ' + safeRole;
 
@@ -537,14 +593,22 @@
         avatar.className = 'msg-avatar ' + safeRole;
         if (safeRole === 'assistant') {
             const img = document.createElement('img');
-            img.src = 'https://lh3.googleusercontent.com/aida-public/AB6AXuAnTgNMSWaolorX1KbBnPvmYBhCltmdngCLe1-_mc3ZOtO6me-1HJfZsDr6MFEcrtCvHifvaHr6lEDGiRfmVfJ2rKecaU8sSFPrbJorycVKulM7iR4TqaSlxfVfq9dQxji_Gbx82L-b5W7SIVMnLhVIil_VZTQmQdg8TV1YvKGfRsD8hF-6Qn7TY6355PpBUka3JP0_M9ppdmVOvha_3SAUofzcs1gS3o147DcMrreGHN9c2vdYL6bMT1g1V7HPHO7_JDwO-yEmTgU';
-            img.alt = 'Nanobot avatar';
+            img.src = getAssistantAvatarUrl();
+            img.alt = assistantName + ' avatar';
             avatar.appendChild(img);
         } else {
-            const icon = document.createElement('span');
-            icon.className = 'material-symbols-outlined';
-            icon.textContent = 'person';
-            avatar.appendChild(icon);
+            const userAvatarUrl = getUserAvatarUrl();
+            if (userAvatarUrl) {
+                const img = document.createElement('img');
+                img.src = userAvatarUrl;
+                img.alt = userName + ' avatar';
+                avatar.appendChild(img);
+            } else {
+                const icon = document.createElement('span');
+                icon.className = 'material-symbols-outlined';
+                icon.textContent = getUserAvatarIcon();
+                avatar.appendChild(icon);
+            }
         }
 
         const body = document.createElement('div');
@@ -552,7 +616,7 @@
 
         const name = document.createElement('div');
         name.className = 'msg-name';
-        name.textContent = safeRole === 'assistant' ? 'Nanobot' : 'You';
+        name.textContent = safeRole === 'assistant' ? assistantName : userName;
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'msg-content';
@@ -703,7 +767,7 @@
 
             var titleSpan = document.createElement('span');
             titleSpan.className = 'session-title';
-            titleSpan.textContent = s.title || 'New Chat';
+            titleSpan.textContent = s.title || getNewChatLabel();
             info.appendChild(titleSpan);
 
             var metaSpan = document.createElement('span');
@@ -737,7 +801,7 @@
             return;
         }
         currentSessionId = sessionId;
-        chatTitle.textContent = title || 'Nanobot';
+        chatTitle.textContent = title || getBrandProductName();
         messagesEl.innerHTML = '';
         contextBar.classList.add('hidden');
         closeSidebar();
@@ -790,7 +854,7 @@
             if (res.ok) {
                 const data = await res.json();
                 currentSessionId = data.session.session_id;
-                chatTitle.textContent = data.session.title || 'New Chat';
+                chatTitle.textContent = data.session.title || getBrandProductName();
                 messagesEl.innerHTML = '';
                 contextBar.classList.add('hidden');
                 // Show the greeting from the HTTP response (not SSE)

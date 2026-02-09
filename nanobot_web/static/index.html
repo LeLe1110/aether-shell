@@ -24,20 +24,21 @@
         <div class="login-card">
             <div class="login-brand">
                 <div class="login-icon" aria-hidden="true">
-                    <span class="material-symbols-outlined">pets</span>
+                    <img class="login-icon-img hidden" data-brand-img="loginIconUrl" alt="">
+                    <span class="material-symbols-outlined" data-brand-icon="loginIcon">pets</span>
                 </div>
                 <div>
-                    <h1>Nanobot</h1>
-                    <p>Invite-only AI companion</p>
+                    <h1 data-brand-text="productName">Nanobot</h1>
+                    <p data-brand-text="tagline">Invite-only AI companion</p>
                 </div>
             </div>
-            <p class="login-subtitle">Enter invite code to start chatting</p>
+            <p class="login-subtitle" data-brand-text="loginSubtitle">Enter invite code to start chatting</p>
             <form id="login-form">
-                <label class="sr-only" for="invite-code">Invite code</label>
-                <input type="password" id="invite-code" placeholder="Invite code" autocomplete="off" required>
+                <label class="sr-only" for="invite-code" data-brand-text="inviteLabel">Invite code</label>
+                <input type="password" id="invite-code" placeholder="Invite code" data-brand-placeholder="invitePlaceholder" autocomplete="off" required>
                 <button type="submit" id="login-btn">
                     <span class="material-symbols-outlined" aria-hidden="true">login</span>
-                    Login
+                    <span data-brand-text="loginButtonLabel">Login</span>
                 </button>
             </form>
             <p id="login-error" class="error-text" aria-live="polite"></p>
@@ -52,22 +53,22 @@
                 <div class="sidebar-profile">
                     <div class="sidebar-avatar" aria-hidden="true"></div>
                     <div>
-                        <h2>Nanobot</h2>
+                        <h2 data-brand-text="productName">Nanobot</h2>
                         <span class="status-pill">
-                            <span class="status-dot" aria-hidden="true"></span>
-                            Online
-                        </span>
+                        <span class="status-dot" aria-hidden="true"></span>
+                        <span data-brand-text="statusLabel">Online</span>
+                    </span>
                     </div>
                 </div>
                 <button id="sidebar-close" class="icon-btn icon-btn-ghost" aria-label="Close">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
-            <p class="sidebar-title">Recent Chats</p>
+            <p class="sidebar-title" data-brand-text="sidebarTitle">Recent Chats</p>
             <ul id="session-list" class="session-list"></ul>
             <button id="logout-btn" class="sidebar-logout">
                 <span class="material-symbols-outlined" aria-hidden="true">logout</span>
-                Logout
+                <span data-brand-text="logoutLabel">Logout</span>
             </button>
         </aside>
         <div id="sidebar-overlay" class="sidebar-overlay"></div>
@@ -81,15 +82,15 @@
                             <span class="material-symbols-outlined">menu</span>
                         </button>
                         <div class="chat-title-wrap">
-                            <h2 id="chat-title">Nanobot</h2>
+                            <h2 id="chat-title" data-brand-text="productName">Nanobot</h2>
                             <span class="chat-status">
                                 <span class="status-dot" aria-hidden="true"></span>
-                                Online
+                                <span data-brand-text="statusLabel">Online</span>
                             </span>
                         </div>
                         <button id="new-chat-btn" class="cat-ear-btn" aria-label="New chat">
                             <span class="material-symbols-outlined" aria-hidden="true">add</span>
-                            <span>New Chat</span>
+                            <span data-brand-text="newChatLabel">New Chat</span>
                         </button>
                     </div>
                     <div id="context-bar" class="context-bar hidden"></div>
@@ -104,7 +105,7 @@
                             <span class="material-symbols-outlined">add_circle</span>
                         </button>
                         <input type="file" id="file-input" multiple accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.zip" hidden>
-                        <textarea id="message-input" placeholder="Type a message..." rows="1" autocomplete="off"></textarea>
+                        <textarea id="message-input" placeholder="Type a message..." data-brand-placeholder="messagePlaceholder" rows="1" autocomplete="off"></textarea>
                         <button type="submit" id="send-btn" aria-label="Send">
                             <span class="material-symbols-outlined">send</span>
                         </button>
@@ -122,6 +123,7 @@
         </div>
     </div>
 
+    <script src="/js/brand.js?v=20260208a"></script>
     <script src="/js/app.js?v=20260208a"></script>
 </body>
 </html>

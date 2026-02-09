@@ -25,6 +25,7 @@
     --radius-xl: 32px;
     --radius-2xl: 40px;
     --sidebar-width: 280px;
+    --brand-sidebar-avatar-url: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBmAyeA5vP582WigANy5HsLC90At5fmigmBxhBB1gg7iwr03axrilFBradqnvkoZMIKCIseMwps_TrIW6OMl7Ho9jJFbUL5SJAf2s27alo15wV1KN10gh3UXq6NuS5ZZW7iFxvZZpJTmao_dL8kLUyQSQLIRG6tdCKCWBkyfi9ErYQmkvJT5ttsis3MCfbtrALXjvpywtYu1Nk0t-oFeEqh7HcXIRCXBoPlCuDXlEkMvF3oI83tBVql13iDC3GMf3afP5sUOg9sxww");
 }
 
 @media (prefers-color-scheme: dark) {
@@ -174,6 +175,19 @@ body::after {
     font-size: 28px;
 }
 
+.login-icon-img {
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 16px;
+    display: block;
+}
+
+.login-icon.has-image {
+    background: transparent;
+    color: inherit;
+}
+
 .login-brand h1 {
     font-size: 26px;
     font-weight: 700;
@@ -314,7 +328,7 @@ body::after {
     height: 44px;
     border-radius: 50%;
     border: 2px solid var(--primary);
-    background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBmAyeA5vP582WigANy5HsLC90At5fmigmBxhBB1gg7iwr03axrilFBradqnvkoZMIKCIseMwps_TrIW6OMl7Ho9jJFbUL5SJAf2s27alo15wV1KN10gh3UXq6NuS5ZZW7iFxvZZpJTmao_dL8kLUyQSQLIRG6tdCKCWBkyfi9ErYQmkvJT5ttsis3MCfbtrALXjvpywtYu1Nk0t-oFeEqh7HcXIRCXBoPlCuDXlEkMvF3oI83tBVql13iDC3GMf3afP5sUOg9sxww");
+    background-image: var(--brand-sidebar-avatar-url);
     background-size: cover;
     background-position: center;
 }
