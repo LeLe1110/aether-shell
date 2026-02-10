@@ -16,12 +16,11 @@ from typing import Any
 from aiohttp import web
 from loguru import logger
 
+from aether_shell_web.auth import AuthManager
+from aether_shell_web.rate_limit import RateLimiter
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
-
-from aether_shell_web.auth import AuthManager
-from aether_shell_web.rate_limit import RateLimiter
 
 STATIC_DIR = pathlib.Path(__file__).parent / "static"
 

@@ -1,6 +1,7 @@
 """Configuration schema using Pydantic."""
 
 from pathlib import Path
+
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
@@ -157,12 +158,12 @@ class Config(BaseSettings):
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
-    
+
     @property
     def workspace_path(self) -> Path:
         """Get expanded workspace path."""
         return Path(self.agents.defaults.workspace).expanduser()
-    
+
     def get_provider(self, model: str | None = None) -> ProviderConfig | None:
         """Get matched provider config (api_key, api_base, extra_headers). Falls back to first available."""
         from nanobot.providers.registry import PROVIDERS
@@ -198,7 +199,7 @@ class Config(BaseSettings):
         """Get API key for the given model. Falls back to first available key."""
         p = self.get_provider(model)
         return p.api_key if p else None
-    
+
     def get_api_base(self, model: str | None = None) -> str | None:
         """Get API base URL for the given model. Applies default URLs for known gateways."""
         from nanobot.providers.registry import PROVIDERS
@@ -244,7 +245,7 @@ class Config(BaseSettings):
         if mode in ("native", "stateless", "auto"):
             return mode if mode != "auto" else None
         return None
-    
+
     class Config:
         env_prefix = "NANOBOT_"
         env_nested_delimiter = "__"

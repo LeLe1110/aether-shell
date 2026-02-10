@@ -23,7 +23,7 @@ class LLMResponse:
     response_id: str | None = None
     conversation_id: str | None = None
     model: str | None = None
-    
+
     @property
     def has_tool_calls(self) -> bool:
         """Check if response contains tool calls."""
@@ -33,15 +33,15 @@ class LLMResponse:
 class LLMProvider(ABC):
     """
     Abstract base class for LLM providers.
-    
+
     Implementations should handle the specifics of each provider's API
     while maintaining a consistent interface.
     """
-    
+
     def __init__(self, api_key: str | None = None, api_base: str | None = None):
         self.api_key = api_key
         self.api_base = api_base
-    
+
     @abstractmethod
     async def chat(
         self,
@@ -55,7 +55,7 @@ class LLMProvider(ABC):
     ) -> LLMResponse:
         """
         Send a chat completion request.
-        
+
         Args:
             messages: List of message dicts with 'role' and 'content'.
             tools: Optional list of tool definitions.
@@ -64,7 +64,7 @@ class LLMProvider(ABC):
             temperature: Sampling temperature.
             session_state: Optional provider-specific session state.
             on_delta: Optional async callback for streaming text deltas.
-        
+
         Returns:
             LLMResponse with content and/or tool calls.
         """
@@ -73,7 +73,7 @@ class LLMProvider(ABC):
     def supports_native_session(self) -> bool:
         """Return True if the provider supports native server-side sessions."""
         return False
-    
+
     @abstractmethod
     def get_default_model(self) -> str:
         """Get the default model for this provider."""

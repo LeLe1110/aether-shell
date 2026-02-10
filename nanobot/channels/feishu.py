@@ -8,10 +8,10 @@ import os
 import re
 import threading
 import time
-from pathlib import Path
-from urllib.parse import urlparse
 from collections import OrderedDict
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from loguru import logger
 
@@ -23,14 +23,14 @@ from nanobot.config.schema import FeishuConfig
 try:
     import lark_oapi as lark
     from lark_oapi.api.im.v1 import (
-        CreateMessageRequest,
-        CreateMessageRequestBody,
-        CreateMessageReactionRequest,
-        CreateMessageReactionRequestBody,
         CreateFileRequest,
         CreateFileRequestBody,
         CreateImageRequest,
         CreateImageRequestBody,
+        CreateMessageReactionRequest,
+        CreateMessageReactionRequestBody,
+        CreateMessageRequest,
+        CreateMessageRequestBody,
         Emoji,
         P2ImMessageReceiveV1,
     )
@@ -52,17 +52,17 @@ MSG_TYPE_MAP = {
 class FeishuChannel(BaseChannel):
     """
     Feishu/Lark channel using WebSocket long connection.
-    
+
     Uses WebSocket to receive events - no public IP or webhook required.
-    
+
     Requires:
     - App ID and App Secret from Feishu Open Platform
     - Bot capability enabled
     - Event subscription enabled (im.message.receive_v1)
     """
-    
+
     name = "feishu"
-    
+
     def __init__(self, config: FeishuConfig, bus: MessageBus):
         super().__init__(config, bus)
         self.config: FeishuConfig = config
@@ -71,17 +71,17 @@ class FeishuChannel(BaseChannel):
         self._ws_thread: threading.Thread | None = None
         self._processed_message_ids: OrderedDict[str, None] = OrderedDict()  # Ordered dedup cache
         self._loop: asyncio.AbstractEventLoop | None = None
-    
+
     async def start(self) -> None:
         """Start the Feishu bot with WebSocket long connection."""
         if not FEISHU_AVAILABLE:
             logger.error("Feishu SDK not installed. Run: pip install lark-oapi")
             return
-        
+
         if not self.config.app_id or not self.config.app_secret:
             logger.error("Feishu app_id and app_secret not configured")
             return
-        
+
         self._running = True
         self._loop = asyncio.get_running_loop()
 
@@ -91,14 +91,14 @@ class FeishuChannel(BaseChannel):
             "msg-frontier.feishu.cn",
             "msg-frontier.larksuite.com",
         ])
-        
+
         # Create Lark client for sending messages
         self._client = lark.Client.builder() \
             .app_id(self.config.app_id) \
             .app_secret(self.config.app_secret) \
             .log_level(lark.LogLevel.INFO) \
             .build()
-        
+
         # Create event handler (register supported events to avoid "processor not found" logs)
         handler_builder = lark.EventDispatcherHandler.builder(
             self.config.encrypt_key or "",
@@ -125,7 +125,7 @@ class FeishuChannel(BaseChannel):
         except Exception as e:
             logger.debug(f"Feishu optional event registration skipped: {e}")
         event_handler = handler_builder.build()
-        
+
         # Create WebSocket client for long connection
         self._ws_client = lark.ws.Client(
             self.config.app_id,
@@ -133,20 +133,20 @@ class FeishuChannel(BaseChannel):
             event_handler=event_handler,
             log_level=lark.LogLevel.INFO
         )
-        
+
         # Start WebSocket client in a separate thread
         def run_ws():
             try:
                 self._ws_client.start()
             except Exception as e:
                 logger.error(f"Feishu WebSocket error: {e}")
-        
+
         self._ws_thread = threading.Thread(target=run_ws, daemon=True)
         self._ws_thread.start()
-        
+
         logger.info("Feishu bot started with WebSocket long connection")
         logger.info("No public IP required - using WebSocket to receive events")
-        
+
         # Keep running until stopped
         while self._running:
             await asyncio.sleep(1)
@@ -166,7 +166,7 @@ class FeishuChannel(BaseChannel):
             value = ",".join(entries)
             os.environ["NO_PROXY"] = value
             os.environ["no_proxy"] = value
-    
+
     async def stop(self) -> None:
         """Stop the Feishu bot."""
         self._running = False
@@ -176,7 +176,7 @@ class FeishuChannel(BaseChannel):
             except Exception as e:
                 logger.warning(f"Error stopping WebSocket client: {e}")
         logger.info("Feishu bot stopped")
-    
+
     def _add_reaction_sync(self, message_id: str, emoji_type: str) -> None:
         """Sync helper for adding reaction (runs in thread pool)."""
         try:
@@ -187,9 +187,9 @@ class FeishuChannel(BaseChannel):
                     .reaction_type(Emoji.builder().emoji_type(emoji_type).build())
                     .build()
                 ).build()
-            
+
             response = self._client.im.v1.message_reaction.create(request)
-            
+
             if not response.success():
                 logger.warning(f"Failed to add reaction: code={response.code}, msg={response.msg}")
             else:
@@ -200,12 +200,12 @@ class FeishuChannel(BaseChannel):
     async def _add_reaction(self, message_id: str, emoji_type: str = "THUMBSUP") -> None:
         """
         Add a reaction emoji to a message (non-blocking).
-        
+
         Common emoji types: THUMBSUP, OK, EYES, DONE, OnIt, HEART
         """
         if not self._client or not Emoji:
             return
-        
+
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._add_reaction_sync, message_id, emoji_type)
 
@@ -221,7 +221,8 @@ class FeishuChannel(BaseChannel):
         lines = [line.strip() for line in table_text.strip().split("\n") if line.strip()]
         if len(lines) < 3:
             return None
-        split = lambda line: [cell.strip() for cell in line.strip("|").split("|")]
+        def split(line: str) -> list[str]:
+            return [cell.strip() for cell in line.strip("|").split("|")]
         headers = split(lines[0])
         rows = [split(line) for line in lines[2:]]
         columns = [
@@ -254,7 +255,7 @@ class FeishuChannel(BaseChannel):
         if remaining:
             elements.append({"tag": "markdown", "content": remaining})
         return elements or [{"tag": "markdown", "content": content}]
-    
+
     @staticmethod
     def _has_markdown(text: str) -> bool:
         """Check if text contains Markdown formatting."""
@@ -778,7 +779,7 @@ class FeishuChannel(BaseChannel):
                 lines.append(text.strip())
 
         return "\n".join(lines).strip()
-    
+
     def _on_message_sync(self, data: "P2ImMessageReceiveV1") -> None:
         """
         Sync handler for incoming messages (called from WebSocket thread).
@@ -794,29 +795,29 @@ class FeishuChannel(BaseChannel):
     def _on_message_reaction_created_sync(self, data: Any) -> None:
         """Ignore reaction created events to avoid noisy logs."""
         return
-    
+
     async def _on_message(self, data: "P2ImMessageReceiveV1") -> None:
         """Handle incoming message from Feishu."""
         try:
             event = data.event
             message = event.message
             sender = event.sender
-            
+
             # Deduplication check
             message_id = message.message_id
             if message_id in self._processed_message_ids:
                 return
             self._processed_message_ids[message_id] = None
-            
+
             # Trim cache: keep most recent 500 when exceeds 1000
             while len(self._processed_message_ids) > 1000:
                 self._processed_message_ids.popitem(last=False)
-            
+
             # Skip bot messages
             sender_type = sender.sender_type
             if sender_type == "bot":
                 return
-            
+
             sender_open_id = sender.sender_id.open_id if sender.sender_id else ""
             sender_user_id = sender.sender_id.user_id if sender.sender_id else ""
             sender_union_id = sender.sender_id.union_id if sender.sender_id else ""
@@ -825,11 +826,11 @@ class FeishuChannel(BaseChannel):
             chat_id = message.chat_id
             chat_type = message.chat_type  # "p2p" or "group"
             msg_type = message.message_type
-            
+
             # Add reaction to indicate "seen" (optional)
             if self.config.auto_react:
                 await self._add_reaction(message_id, "THUMBSUP")
-            
+
             # Parse message content
             if msg_type == "text":
                 try:
@@ -865,10 +866,10 @@ class FeishuChannel(BaseChannel):
                     content = "[file]"
             else:
                 content = MSG_TYPE_MAP.get(msg_type, f"[{msg_type}]")
-            
+
             if not content:
                 return
-            
+
             # Forward to message bus
             reply_target = sender_open_id or sender_user_id or sender_union_id or sender_id
             reply_to = chat_id if chat_type == "group" else reply_target
@@ -895,6 +896,6 @@ class FeishuChannel(BaseChannel):
                     "session_key": session_key,
                 }
             )
-            
+
         except Exception as e:
             logger.error(f"Error processing Feishu message: {e}")

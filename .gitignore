@@ -20,4 +20,19 @@ poetry.lock
 .DS_Store
 **/.DS_Store
 monitor_llm.log
-tests/
+
+# Node
+node_modules/
+**/node_modules/
+**/dist/
+**/coverage/
+**/.eslintcache
+**/.prettier-cache
+**/.tsbuildinfo
+.pnpm-store/
+
+# Local caches
+.ruff_cache/
+
+# Tests should be committed; keep only cache ignored
+# tests/

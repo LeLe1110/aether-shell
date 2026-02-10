@@ -79,10 +79,15 @@ include = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+exclude = [
+    "aether_shell_web/.claude",
+    "aether_shell_web/.codex",
+    "node_modules",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
-ignore = ["E501"]
+ignore = ["E501", "N803"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

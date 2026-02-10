@@ -35,7 +35,7 @@ class InboundMessage:
 @dataclass
 class OutboundMessage:
     """Message to send to a chat channel."""
-    
+
     channel: str
     chat_id: str
     content: str

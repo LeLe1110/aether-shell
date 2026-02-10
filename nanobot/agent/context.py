@@ -129,7 +129,7 @@ When remembering something, write to {workspace_path}/memory/MEMORY.md"""
                     parts.append(f"## Developer Instructions (AGENTS.md)\n\n{content}")
                 else:
                     parts.append(f"## {filename}\n\n{content}")
-        
+
         return "\n\n".join(parts) if parts else ""
 
     def get_bootstrap_fingerprint(self) -> str:

@@ -17,7 +17,7 @@ class AuthManager:
 
     def login(self, invite_code: str) -> str | None:
         """Validate invite code and return a JWT, or None if invalid."""
-        if not hmac.compare_digest(invite_code, self._secret.decode("utf-8")):
+        if not hmac.compare_digest(invite_code.encode("utf-8"), self._secret):
             return None
         now = int(time.time())
         chat_id = self._make_chat_id(invite_code)
