@@ -91,6 +91,22 @@ pip install nanobot-ai
 
 ## 🚀 Quick Start
 
+## ✅ Development: One-Command CI Check
+
+From the repo root:
+
+```bash
+make ci
+```
+
+This runs:
+- Python: `ruff` + `pytest`
+- Node (workspace `aetherctl/`): `lint` + `test` + `build`
+
+Notes:
+- If `pnpm` is available it will be used; otherwise it falls back to `npm --prefix aetherctl ...`.
+
+
 > [!TIP]
 > Set your API key in `~/.aether-shell/config.json`.
 > Get API keys: [OpenRouter](https://openrouter.ai/keys) (Global) · [DashScope](https://dashscope.console.aliyun.com) (Qwen) · [Brave Search](https://brave.com/search/api/) (optional, for web search)
