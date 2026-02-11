@@ -129,12 +129,18 @@ class HTTPChannel(BaseChannel):
             return
 
         queues = self._clients.get(chat_id, [])
-        if not queues:
+        has_clients = bool(queues)
+        if not has_clients:
             logger.debug(f"Web send: no SSE clients for chat_id={chat_id}")
-            return
         is_stream = meta.get("stream", False)
         stream_id = meta.get("stream_id")
         is_final = meta.get("final", False)
+
+        # Extract session_id from metadata (session_key format: "web:chat_id:session_id")
+        session_key = meta.get("session_key", "")
+        session_id = None
+        if session_key and session_key.startswith(f"web:{chat_id}:"):
+            session_id = session_key[len(f"web:{chat_id}:"):]
 
         if is_stream and not is_final:
             event_data = {
@@ -143,6 +149,8 @@ class HTTPChannel(BaseChannel):
                 "content": msg.content,
                 "chat_id": chat_id,
             }
+            if session_id:
+                event_data["session_id"] = session_id
             event_name = "delta"
         else:
             event_data = {
@@ -152,6 +160,8 @@ class HTTPChannel(BaseChannel):
                 "stream_id": stream_id,
                 "role": "assistant",
             }
+            if session_id:
+                event_data["session_id"] = session_id
             event_name = "message"
 
             # Context metadata (only on final/complete messages, when enabled)
@@ -210,14 +220,15 @@ class HTTPChannel(BaseChannel):
             self._event_buffer[chat_id] = deque(maxlen=self._event_buffer_size)
         self._event_buffer[chat_id].append((event_id, payload))
 
-        dead: list[asyncio.Queue] = []
-        for q in queues:
-            try:
-                q.put_nowait(payload)
-            except asyncio.QueueFull:
-                dead.append(q)
-        for q in dead:
-            queues.remove(q)
+        if has_clients:
+            dead: list[asyncio.Queue] = []
+            for q in queues:
+                try:
+                    q.put_nowait(payload)
+                except asyncio.QueueFull:
+                    dead.append(q)
+            for q in dead:
+                queues.remove(q)
 
         # Performance monitoring
         elapsed = time.monotonic() - t_start
@@ -323,6 +334,9 @@ class HTTPChannel(BaseChannel):
             "role": "user",
             "message_id": message_id or "",
         }
+        # Add session_id if available
+        if session_id:
+            user_event_data["session_id"] = session_id
         with self._event_id_lock:
             self._event_id_counter += 1
             eid = self._event_id_counter

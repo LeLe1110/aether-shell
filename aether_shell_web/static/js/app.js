@@ -263,6 +263,11 @@
                 sentMessageIds.delete(data.message_id);
                 return;
             }
+            // Verify session_id matches current session
+            if (data.session_id && currentSessionId && data.session_id !== currentSessionId) {
+                console.debug('Ignoring user_message for different session:', data.session_id);
+                return;
+            }
             // Render user message from another device
             appendMessage('user', data.content || '', true);
             scrollToBottom();
@@ -324,6 +329,12 @@
     }
 
     function handleDelta(data) {
+        // Verify session_id matches current session
+        if (data.session_id && currentSessionId && data.session_id !== currentSessionId) {
+            console.debug('Ignoring delta for different session:', data.session_id);
+            return;
+        }
+
         const sid = data.stream_id || 'default_stream';
         if (!streams[sid]) {
             // Create a new streaming bubble
@@ -338,6 +349,14 @@
     }
 
     function handleMessage(data) {
+        // Verify session_id matches current session
+        if (data.session_id && currentSessionId && data.session_id !== currentSessionId) {
+            console.debug('Ignoring message for different session:', data.session_id);
+            // Still refresh session list (titles may have changed)
+            loadSessions();
+            return;
+        }
+
         const sid = data.stream_id;
         var msgEl;
         if (sid && streams[sid]) {
