@@ -31,7 +31,7 @@ RUN npm install && npm run build
 WORKDIR /app
 
 # Create config directory
-RUN mkdir -p /root/.aether-shell
+RUN mkdir -p /root/.aether-bot
 
 # Gateway default port
 EXPOSE 18790

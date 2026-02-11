@@ -67,7 +67,7 @@ class SessionManager:
 
     def __init__(self, workspace: Path):
         self.workspace = workspace
-        self.sessions_dir = ensure_dir(Path.home() / ".aether-shell" / "sessions")
+        self.sessions_dir = ensure_dir(Path.home() / ".aether-bot" / "sessions")
         self._active_index_path = get_sessions_path() / "active.json"
         self._active_sessions: dict[str, str] = {}
         self._load_active_index()

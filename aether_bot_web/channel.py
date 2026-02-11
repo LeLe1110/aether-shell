@@ -16,8 +16,8 @@ from typing import Any
 from aiohttp import web
 from loguru import logger
 
-from aether_shell_web.auth import AuthManager
-from aether_shell_web.rate_limit import RateLimiter
+from aether_bot_web.auth import AuthManager
+from aether_bot_web.rate_limit import RateLimiter
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
@@ -52,19 +52,19 @@ class HTTPChannel(BaseChannel):
         self._event_buffer: dict[str, deque] = {}
         self._event_buffer_size = 2000
         # Persistent sessions directory
-        self._sessions_dir = pathlib.Path.home() / ".aether-shell" / "sessions"
+        self._sessions_dir = pathlib.Path.home() / ".aether-bot" / "sessions"
         # Message deduplication: message_id -> None (LRU, max 1000)
         self._processed_messages: OrderedDict[str, None] = OrderedDict()
         # Media registry: file_id -> local path
         self._media_registry: dict[str, str] = {}
         # Upload directory
-        self._upload_dir = pathlib.Path.home() / ".aether-shell" / "web_uploads"
+        self._upload_dir = pathlib.Path.home() / ".aether-bot" / "web_uploads"
         # Branding config + assets (outside repo)
         self._brand_path = pathlib.Path(
-            getattr(config, "brand_path", str(pathlib.Path.home() / ".aether-shell" / "brand.json"))
+            getattr(config, "brand_path", str(pathlib.Path.home() / ".aether-bot" / "brand.json"))
         ).expanduser()
         self._brand_assets_dir = pathlib.Path(
-            getattr(config, "brand_assets_dir", str(pathlib.Path.home() / ".aether-shell" / "brand-assets"))
+            getattr(config, "brand_assets_dir", str(pathlib.Path.home() / ".aether-bot" / "brand-assets"))
         ).expanduser()
         # Subscribe to outbound messages
         self.bus.subscribe_outbound("web", self.send)
@@ -419,7 +419,7 @@ class HTTPChannel(BaseChannel):
     # ---- Sessions (disk-based) ----
 
     def _scan_sessions_for_chat(self, chat_id: str) -> list[dict]:
-        """Scan ~/.aether-shell/sessions/ for JSONL files belonging to this chat_id."""
+        """Scan ~/.aether-bot/sessions/ for JSONL files belonging to this chat_id."""
         if not self._sessions_dir.exists():
             return []
 
@@ -679,7 +679,7 @@ class HTTPChannel(BaseChannel):
             logger.warning(f"Failed to mark pending_reset: {e}")
 
     def _update_active_index(self, base_key: str, active_key: str) -> None:
-        """Update ~/.aether-shell/sessions/active.json."""
+        """Update ~/.aether-bot/sessions/active.json."""
         active_path = self._sessions_dir / "active.json"
         data = {}
         if active_path.exists():

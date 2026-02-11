@@ -9,7 +9,7 @@ NODE_PKG_MGR := $(shell command -v pnpm >/dev/null 2>&1 && echo "pnpm" || echo "
 lint: lint-py lint-node
 
 lint-py:
-	python -m ruff check nanobot aether_shell_web
+	python -m ruff check nanobot aether_bot_web
 
 lint-node:
 	@if [ "$(NODE_PKG_MGR)" = "pnpm" ]; then \

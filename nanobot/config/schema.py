@@ -186,7 +186,7 @@ class ContextConfig(BaseModel):
 
 class AgentDefaults(BaseModel):
     """Default agent configuration."""
-    workspace: str = "~/.aether-shell/workspace"
+    workspace: str = "~/.aether-bot/workspace"
     model: str = "anthropic/claude-opus-4-5"
     max_tokens: int = 8192
     temperature: float = 0.7

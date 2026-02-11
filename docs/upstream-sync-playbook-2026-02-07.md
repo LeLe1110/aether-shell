@@ -5,8 +5,8 @@
 - 先判断与本地改动是否冲突；无冲突功能可直接同步，有冲突功能提供解决方案并让你选择。
 
 ## 2. 当前仓库关系（摘要）
-- `origin`：你的仓库（LeLe1110/aether-shell）
-- `upstream`：官方仓库（LeLe1110/aether-shell）
+- `origin`：你的仓库（LeLe1110/aether-bot）
+- `upstream`：官方仓库（LeLe1110/aether-bot）
 - `main`：稳定/发布基线
 - `develop`：日常集成分支
 - 公共基点：`16f6fdf`（`develop` 与 `upstream/main` 的 merge-base）

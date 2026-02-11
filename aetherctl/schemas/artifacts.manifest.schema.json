@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aether-shell.local/schemas/artifacts.manifest.schema.json",
+  "$id": "https://aether-bot.local/schemas/artifacts.manifest.schema.json",
   "title": "Aether Shell Artifacts Manifest (Phase 1a)",
   "type": "object",
   "additionalProperties": false,

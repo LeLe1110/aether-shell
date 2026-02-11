@@ -215,10 +215,10 @@ def onboard():
 
     console.print(f"\n{__logo__} nanobot is ready!")
     console.print("\nNext steps:")
-    console.print("  1. Add your API key to [cyan]~/.aether-shell/config.json[/cyan]")
+    console.print("  1. Add your API key to [cyan]~/.aether-bot/config.json[/cyan]")
     console.print("     Get one at: https://openrouter.ai/keys")
     console.print("  2. Chat: [cyan]nanobot agent -m \"Hello!\"[/cyan]")
-    console.print("\n[dim]Want Telegram/WhatsApp? See: https://github.com/LeLe1110/aether-shell#-chat-apps[/dim]")
+    console.print("\n[dim]Want Telegram/WhatsApp? See: https://github.com/LeLe1110/aether-bot#-chat-apps[/dim]")
 
 
 
@@ -318,7 +318,7 @@ def _make_provider(config):
 
     if not api_key and not is_bedrock and not is_vllm:
         console.print("[red]Error: No API key configured.[/red]")
-        console.print("Set one in ~/.aether-shell/config.json under providers section")
+        console.print("Set one in ~/.aether-bot/config.json under providers section")
         raise typer.Exit(1)
 
     return LiteLLMProvider(
@@ -696,7 +696,7 @@ def _get_bridge_dir() -> Path:
     import subprocess
 
     # User's bridge location
-    user_bridge = Path.home() / ".aether-shell" / "bridge"
+    user_bridge = Path.home() / ".aether-bot" / "bridge"
 
     # Check if already built
     if (user_bridge / "dist" / "index.js").exists():

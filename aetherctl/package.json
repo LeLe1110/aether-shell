@@ -1,5 +1,5 @@
 {
-  "name": "@aether-shell/aetherctl",
+  "name": "@aether-bot/aetherctl",
   "version": "0.1.0",
   "private": true,
   "type": "module",

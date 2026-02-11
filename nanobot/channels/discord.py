@@ -198,7 +198,7 @@ class DiscordChannel(BaseChannel):
 
         content_parts = [content] if content else []
         media_paths: list[str] = []
-        media_dir = Path.home() / ".aether-shell" / "media"
+        media_dir = Path.home() / ".aether-bot" / "media"
 
         for attachment in payload.get("attachments") or []:
             url = attachment.get("url")

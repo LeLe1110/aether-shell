@@ -1,11 +1,11 @@
 {
-  "name": "aether-shell",
+  "name": "aether-bot",
   "private": true,
   "packageManager": "pnpm@10.29.2",
   "workspaces": [
     "aetherctl"
   ],
   "scripts": {
-    "aetherctl": "pnpm --filter @aether-shell/aetherctl exec aetherctl"
+    "aetherctl": "pnpm --filter @aether-bot/aetherctl exec aetherctl"
   }
 }

@@ -78,7 +78,7 @@ bash scripts/detect_session_mode.sh
 
 ## nanobot 配置示例
 
-根据检测结果，在 `~/.aether-shell/config.json` 中配置对应的 provider：
+根据检测结果，在 `~/.aether-bot/config.json` 中配置对应的 provider：
 
 ### native 模式（API 完全支持 `previous_response_id`）
 

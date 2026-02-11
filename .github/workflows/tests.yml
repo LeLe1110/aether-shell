@@ -27,7 +27,7 @@ jobs:
 
       - name: Ruff
         run: |
-          python -m ruff check nanobot aether_shell_web
+          python -m ruff check nanobot aether_bot_web
 
       - name: Pytest
         run: |
